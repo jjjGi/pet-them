@@ -34,3 +34,5 @@
 # OS
 .DS_Store
 Thumbs.db
+# Unity 6 editor scratch directory
+.utmp/

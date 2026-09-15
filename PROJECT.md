@@ -3,8 +3,8 @@
 > 가칭: **PET THEM! / 펫 뎀!**
 > 개발 도구: **PET THEM! Balance Lab**
 > 마지막 정리: 2026-09-16
-> 상태: 전투 프로토타입 소스와 .NET 검증 완료. MCP 서버는 별도 저장소에서 동작 확인.
-> 남은 것: Unity 라이선스 활성화(사용자), Unity 실행·Android 실기기 검증, HTML 보고서.
+> 상태: Unity 컴파일과 Android APK 빌드까지 성공. MCP 서버는 별도 저장소에서 동작 확인.
+> 남은 것: Play 모드와 실기기에서의 **사람 손맛 검증**, 난이도 조정, HTML 보고서.
 > 이 문서는 새 대화나 다른 개발 환경에서도 작업을 이어가기 위한 기준 문서다.
 
 ## 1. 프로젝트 목표
@@ -479,14 +479,19 @@ MCP의 서버는 반드시 클라우드 서버를 의미하지 않는다.
 - [x] MCP stdio 서버 구현 및 실제 프로토콜 통신 검증 (initialize / tools/list / tools/call).
 - [x] MCP 도구 5개 구현: get_lab_status, get_balance_config, list_bot_policies, run_simulation, read_run_log.
 - [x] 실험실 검증 9개 통과.
+- [x] Unity 계정 로그인 및 Unity Personal 라이선스 활성화 (사용자가 직접 수행).
+- [x] Unity 배치 모드 프로젝트 임포트·컴파일: 종료 코드 0, 컴파일 오류 0, 어셈블리 3개 생성.
+- [x] 로컬 패키지 com.petthem.combat-core를 Unity가 정상 인식.
+- [x] Android 개발 APK 빌드 성공 (19.3 MB, arm64-v8a, IL2CPP, com.petthem.game 0.1.0).
+- [x] Unity가 생성한 ProjectSettings와 packages-lock.json 커밋.
 
 ### 아직 완료하지 않은 작업
 
-- [ ] Unity 계정 로그인 및 라이선스 활성화 (사용자가 직접 해야 함). 현재 라이선스 파일 없음.
-- [ ] Unity 프로젝트 실제 임포트·컴파일·Play 모드 검증.
+- [ ] **Play 모드 실제 확인.** 화면·버튼·이동·공격·일시정지·재시작·기록 저장.
+      자동 검증으로 대체할 수 없다. 사람이 직접 봐야 한다.
 - [ ] Unity와 .NET의 대표 전투 결과 대조.
-- [ ] Android APK 빌드 및 실기기 입력·성능·손맛 확인.
-- [ ] 단계 A 전체 완료 판정: 소스 작성만으로 완료 처리하지 않는다.
+- [ ] APK를 실제 기기에 설치해 동시 이동·공격, 프레임 성능, 가독성, 손의 피로 확인.
+- [ ] 단계 A 전체 완료 판정: 빌드 성공만으로 완료 처리하지 않는다. 손맛 확인이 기준이다.
 - [ ] 첫 실제 플레이 기록 및 HTML 보고서 생성.
 - [ ] 남은 MCP 도구와 Create_Balance_Report 구현 (compare_experiments, analyze_playtests, create_balance_candidate).
 - [ ] MCP 서버를 실제 AI 클라이언트에 등록해 자연어 요청부터 끝까지 시연.
@@ -612,3 +617,5 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check.ps1
 - 2026-09-16: 공통 전투 코어·Unity 프로토타입·봇 시뮬레이터·로그 스키마 구현. 규칙 검증 12개 및 5회 봇 실행 완료. Unity 실행·실기기 검증과 MCP·보고서는 미완료로 구분.
 
 - 2026-09-16: 프로토타입 소스 전체를 GitHub에 푸시(4b57c8e). 사용자 지시에 따라 밸런스 실험실과 MCP를 별도 비공개 저장소 jjjGi/pet-them-balance-lab으로 분리. 봇 시뮬레이터를 그쪽으로 이관하고 시드 42~46의 이벤트 스트림이 이관 전후 동일함을 확인. MCP stdio 서버와 도구 5개를 구현하고 실제 프로토콜 통신까지 검증. Unity 에디터·Android 모듈 설치 완료 확인, 라이선스는 미활성.
+
+- 2026-09-16: 사용자가 Unity Personal 라이선스를 활성화. 배치 모드 임포트·컴파일 성공(오류 0), Android 개발 APK 빌드 성공(19.3 MB, arm64-v8a, IL2CPP). Unity가 생성한 ProjectSettings 전체와 packages-lock.json을 커밋해 가로 방향·패키지 이름·입력 방식 설정을 고정. 남은 것은 Play 모드와 실기기의 사람 검증.

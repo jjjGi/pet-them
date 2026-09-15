@@ -68,5 +68,83 @@ Hub headless 설치로 Unity 6000.3.24f1 및 Android 모듈 다운로드를 시�
 
 - 에디터: C:/Program Files/Unity/Hub/Editor/6000.3.24f1/Editor/Unity.exe — 설치됨.
 - Android: AndroidPlayer / SDK / NDK / OpenJDK — 모두 설치됨.
-- 라이선스: C:/ProgramData/Unity 디렉터리 자체가 없고 라이선스 파일도 없다. **미활성.**
-  사용자가 Unity Hub에서 직접 로그인하고 라이선스를 활성화해야 에디터를 실행할 수 있다.
+- 라이선스: 이 시점에는 미활성으로 판단했다. 아래 "라이선스 활성화" 항목에서 해소됐고,
+  `C:/ProgramData/Unity`만 보고 판단한 것이 잘못된 방법이었다는 것도 거기 적었다.
+
+## 2026-09-16 — Unity 라이선스 활성화 및 첫 실제 컴파일
+
+사용자가 Unity Hub에서 계정 로그인과 라이선스 활성화를 완료했다.
+
+- 라이선스: **Unity Personal**, Type `Assigned`, Expiration `Unlimited`.
+- 라이선스 파일은 Hub가 MSIX라서 가상화된 경로에 있다:
+  `%LOCALAPPDATA%/Packages/UnityTechnologies.UnityHub_2vrhnee42bhxm/LocalCache/Local/Unity/licenses/UnityEntitlementLicense.xml`
+  `C:/ProgramData/Unity/Unity_lic.ulf`는 존재하지 않는다. 그 경로만 보고 미활성으로 판단하면 안 된다.
+  실제 활성 여부는 에디터를 배치 모드로 실행해 확인하는 것이 확실하다.
+
+### 배치 모드 임포트·컴파일
+
+~~~powershell
+& "C:/Program Files/Unity/Hub/Editor/6000.3.24f1/Editor/Unity.exe" `
+  -batchmode -quit -projectPath D:/Project/PetThemGame/game -logFile <경로>
+~~~
+
+결과:
+
+- `Exiting batchmode successfully now! ... return code 0`
+- **컴파일 오류 0개** (`error CS` 0건).
+- 어셈블리 3개 생성 확인: `PetThem.Combat.dll`, `PetThem.Game.dll`, `PetThem.Editor.dll`.
+- 로컬 패키지 `com.petthem.combat-core`가 정상 등록됐다.
+  게임 저장소의 전투 코어를 Unity가 패키지로 인식한다는 뜻이다.
+- 로그 앞부분에 `[Licensing::Client] Code 10 while verifying Licensing Client signature`와
+  `LicensingClient has failed validation; ignoring`가 나오지만, 직후 `Successfully connected`와
+  `Successfully resolved entitlement details`로 이어진다. MSIX 서명 검증 경고이며 동작에는 영향이 없다.
+- `CreateDirectory 'C:/Users/user/AppData/Local/Unity/Caches' failed`도 나오지만 임포트와 컴파일은 정상 완료됐다.
+
+**이것은 소스가 컴파일된다는 확인이다. 화면·조작·손맛 검증이 아니다.**
+Play 모드에서 실제로 움직이고 때려 보는 것은 사람이 해야 한다.
+
+### Android 개발 APK 빌드
+
+~~~powershell
+& "C:/Program Files/Unity/Hub/Editor/6000.3.24f1/Editor/Unity.exe" `
+  -batchmode -quit -projectPath D:/Project/PetThemGame/game -buildTarget Android `
+  -executeMethod PetThem.Editor.PrototypeSetup.BuildAndroid -logFile <경로>
+~~~
+
+빌드 도구는 모두 에디터 설치본 안의 것을 사용했다. 별도 SDK 설치가 필요하지 않았다.
+
+- JDK / Android SDK(build-tools 36.0.0) / NDK / Gradle 9.1.0 + Android Gradle Plugin 9.0.0.
+- 결과: `Exiting batchmode successfully now! ... return code 0`.
+- 산출물: `game/Builds/PetThem-development.apk`, 19,337,619 바이트, 404개 항목.
+
+APK를 aapt2로 검사한 결과:
+
+| 항목 | 값 |
+| --- | --- |
+| package | `com.petthem.game` |
+| versionName | `0.1.0` |
+| application-label | `PET THEM!` |
+| minSdkVersion / targetSdkVersion | 25 / 36 |
+| native-code | `arm64-v8a` (IL2CPP, `libil2cpp.so` 포함) |
+| launchable-activity | `com.unity3d.player.UnityPlayerGameActivity` |
+| debuggable | 예 (개발 빌드) |
+
+화면 방향은 `ProjectSettings.asset`의 `defaultScreenOrientation: 3` = LandscapeLeft로 설정돼 있다.
+`allowedAutorotateToPortrait`가 1이지만 기본 방향이 AutoRotation이 아니므로 적용되지 않는다.
+
+**확인 필요:** 개발 빌드라서 `android.permission.INTERNET`이 들어간다.
+Unity 프로파일러 연결용이다. 이 프로젝트는 오프라인 실행을 전제하므로,
+출시용 빌드에서 이 권한이 빠지는지 단계 E에서 반드시 확인한다.
+
+### Unity가 생성한 프로젝트 설정 커밋
+
+임포트 과정에서 Unity가 `game/ProjectSettings/` 전체와 `game/Packages/packages-lock.json`을 생성했다.
+이 파일들이 없으면 다음에 여는 사람은 기본값을 받게 되고, 위에서 확인한 가로 방향·패키지 이름·입력 방식 설정이 사라진다.
+그래서 커밋에 포함했다. `game/.utmp/`는 에디터 임시 폴더라 Git에서 제외했다.
+
+### 여전히 확인하지 않은 항목
+
+- **Play 모드에서의 실제 화면·조작·손맛.** 자동 검증으로 대체할 수 없다. 사람이 해야 한다.
+- 실제 Android 기기에 설치해 동시 이동·공격, 프레임 성능, 가독성 확인.
+- Unity와 .NET에서 같은 전투 조건을 돌린 결과 대조.
+- 실제 플레이 기록 저장 동작 (현재 기록 0건).
