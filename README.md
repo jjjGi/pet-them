@@ -72,3 +72,4 @@ dotnet run --project src/Simulator -c Release -- --runs 5 --seed 42
 [PROJECT.md](PROJECT.md)에 합의한 기획, 단계별 완료 기준, MCP 도구와 Create_Balance_Report 상세 요구사항이 있습니다.
 [AGENTS.md](AGENTS.md)에 검증·문서 갱신·자동 커밋과 푸시 지침이 있습니다.
 밸런스 실험실 쪽 작업은 [jjjGi/pet-them-balance-lab](https://github.com/jjjGi/pet-them-balance-lab)의 README와 AGENTS.md를 따릅니다.
+다른 대화나 다른 에이전트로 이어받을 때는 [docs/handoff.md](docs/handoff.md)를 먼저 읽습니다.
