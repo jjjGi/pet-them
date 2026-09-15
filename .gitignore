@@ -1,0 +1,36 @@
+# Unity generated files (game/ is the planned Unity root)
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+[Mm]emoryCaptures/
+[Rr]ecordings/
+# .NET / IDE
+**/bin/
+**/obj/
+.vs/
+.idea/
+*.csproj.user
+*.suo
+*.user
+*.pidb
+# Credentials / signing
+.env
+.env.*
+!.env.example
+*.pfx
+*.p12
+*.jks
+*.keystore
+*.pem
+*.key
+# Local recordings and generated output
+/experiments/
+/reports/
+/local-data/
+# OS
+.DS_Store
+Thumbs.db
