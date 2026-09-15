@@ -265,13 +265,22 @@ SDK의 명명 제약이 있다면 연결 전에 확인하고 변경 이유를 �
 | list_bot_policies | 사용 가능한 봇 정책과 각 정책의 한계 | 구현 |
 | run_simulation | 시나리오, 조합, 시드 목록, 조작 정책으로 반복 실험 | 구현 |
 | read_run_log | JSONL 기록의 실제 내용 확인, 불완전 기록 판별 | 구현 |
-| compare_experiments | 동일하거나 비교 가능한 조건의 결과 비교 | 미구현 |
-| analyze_playtests | 실제 플레이 기록에서 정체 및 관련 현상 분석 | 미구현 |
-| create_balance_candidate | 근거와 변경 내역을 포함한 새 설정 후보 저장 | 미구현 |
-| Create_Balance_Report | 분석과 실험 결과를 결합한 독립 실행 HTML 보고서 생성 | 미구현 |
+| list_experiments | 저장된 실험 목록과 요약 수치 | 구현 |
+| compare_experiments | 동일하거나 비교 가능한 조건의 결과 비교 | 구현 |
+| create_balance_candidate | 근거와 변경 내역을 포함한 새 설정 후보 저장 | 구현 |
+| list_balance_candidates | 저장된 후보와 변경 내역·근거 | 구현 |
+| Create_Balance_Report | 분석과 실험 결과를 결합한 독립 실행 HTML 보고서 생성 | 구현 |
+| analyze_playtests | 실제 플레이 기록에서 정체 및 관련 현상 분석 | **미구현** |
 
 계획에 없던 get_lab_status와 read_run_log를 먼저 넣었다.
 전자는 모델이 없는 기능을 있다고 말하는 것을 막고, 후자는 보고할 수치를 원본 기록으로 되짚기 위한 것이다.
+
+analyze_playtests만 남았고, 막고 있는 것은 기술이 아니라 데이터다.
+**사람의 플레이 기록이 0건**이라 구현해도 읽을 대상이 없다. 단계 A의 실제 플레이가 선행되어야 한다.
+
+compare_experiments는 같은 시드끼리 짝지어 비교하고, 정책이나 실행 길이가 다르면 수치를 내놓지 않고 거부한다.
+create_balance_candidate는 게임의 밸런스 설정을 절대 수정하지 않는다. 새 후보 파일로만 남긴다.
+
 도구별 입력 스키마와 한도는 실험실 저장소의 docs/mcp-tools.md에 있다.
 
 원하는 자연어 사용 예:
@@ -492,8 +501,9 @@ MCP의 서버는 반드시 클라우드 서버를 의미하지 않는다.
 - [ ] Unity와 .NET의 대표 전투 결과 대조.
 - [ ] APK를 실제 기기에 설치해 동시 이동·공격, 프레임 성능, 가독성, 손의 피로 확인.
 - [ ] 단계 A 전체 완료 판정: 빌드 성공만으로 완료 처리하지 않는다. 손맛 확인이 기준이다.
-- [ ] 첫 실제 플레이 기록 및 HTML 보고서 생성.
-- [ ] 남은 MCP 도구와 Create_Balance_Report 구현 (compare_experiments, analyze_playtests, create_balance_candidate).
+- [ ] 첫 실제 플레이 기록. 이것이 없으면 analyze_playtests를 구현해도 읽을 대상이 없다.
+- [ ] analyze_playtests 구현 (위 항목이 선행).
+- [ ] 한 번에 한 값만 바꾼 후보로 나눠 실험. 현재 후보는 네 값을 동시에 바꿔 기여도를 분리할 수 없다.
 - [ ] MCP 서버를 실제 AI 클라이언트에 등록해 자연어 요청부터 끝까지 시연.
 - [ ] 화살·레이저·펫·3중 택1 성장·상점 확장.
 - [ ] 전투 난이도 조정. 봇 기준으로는 현재 설정에 위험이 없음이 측정됐다 (아래 참조).
