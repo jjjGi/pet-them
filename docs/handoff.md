@@ -11,48 +11,69 @@
 D:/Project/PetThemGame 에서 작업해 줘.
 
 1. PROJECT.md, AGENTS.md, docs/handoff.md 를 읽고 실제 파일·git 상태와 대조해.
-2. Unity 라이선스가 활성화됐는지 먼저 확인해.
-   C:/ProgramData/Unity/Unity_lic.ulf 가 있으면 활성, 없으면 미활성이야.
-   - 활성이면: game/ 을 Unity 6000.3.24f1 로 열어 컴파일·Play 모드·기록 저장을 검증해.
-   - 미활성이면: Unity 관련 작업은 건너뛰고, D:/Project/PetThemBalanceLab 에서
-     compare_experiments 와 create_balance_candidate 구현을 이어가.
-3. 작업 단위마다 해당 저장소의 scripts/check.ps1 을 돌리고,
+2. Unity 라이선스는 이미 활성이야 (Unity Personal). 컴파일과 Android APK 빌드도 이미 성공했어.
+   다시 확인하려면 배치 모드로 돌려봐. 파일 경로로 판단하지 마.
+3. 다음 할 일은 둘 중 하나야. 사용자에게 어느 쪽인지 물어봐.
+   - 게임: Play 모드 확인 후 전투 난이도 조정. 손맛은 사람이 봐야 하니 사용자에게 맡기고,
+     결과를 들은 뒤에 수치를 바꿔.
+   - 실험실(D:/Project/PetThemBalanceLab): compare_experiments 와
+     create_balance_candidate 구현, 그다음 Create_Balance_Report.
+4. 작업 단위마다 해당 저장소의 scripts/check.ps1 을 돌리고,
    PROJECT.md 현재 상태와 docs/verification.md 를 갱신한 뒤 커밋·푸시해.
    두 저장소는 각각 커밋해.
 ~~~
 
 ## 저장소 두 개
 
-| 저장소 | 로컬 | 최신 커밋 | 담는 것 |
-| --- | --- | --- | --- |
-| jjjGi/pet-them (비공개) | D:/Project/PetThemGame | `eadbdc3` | Unity 게임, 공통 전투 코어, 밸런스 설정 |
-| jjjGi/pet-them-balance-lab (비공개) | D:/Project/PetThemBalanceLab | `15d9489` | MCP 서버, 봇 시뮬레이터, 기록 분석 |
+| 저장소 | 로컬 | 담는 것 |
+| --- | --- | --- |
+| jjjGi/pet-them (비공개) | D:/Project/PetThemGame | Unity 게임, 공통 전투 코어, 밸런스 설정 |
+| jjjGi/pet-them-balance-lab (비공개) | D:/Project/PetThemBalanceLab | MCP 서버, 봇 시뮬레이터, 기록 분석 |
+
+최신 커밋은 `git log --oneline -1`로 확인하세요. 이 문서에 적힌 값은 금방 낡습니다.
 
 사용자 지시로 **MCP는 반드시 별도 비공개 저장소**에 둡니다. 게임 저장소로 되돌리지 마세요.
 
 실험실은 게임 저장소의 전투 소스를 `PetThemGameRoot`로 직접 컴파일합니다.
 복사본이 없으므로 규칙이 갈라질 수 없습니다. 게임 쪽 전투 규칙을 고치면 **양쪽 검증을 모두** 돌려야 합니다.
 
-## 지금 막혀 있는 것
+## Unity 상태 (해결됨)
 
-**Unity 라이선스 미활성.** 에이전트가 대신 할 수 없습니다.
+- 라이선스: **Unity Personal**, 활성. Type `Assigned`, 무기한.
+- 에디터: `C:/Program Files/Unity/Hub/Editor/6000.3.24f1/Editor/Unity.exe`
+- Android SDK/NDK/JDK/Gradle: 에디터 설치본 안에 모두 포함. 별도 설치 불필요.
+- 배치 모드 임포트·컴파일: 성공, 오류 0.
+- Android 개발 APK: 빌드 성공 (19.3 MB, `com.petthem.game` 0.1.0, arm64-v8a, IL2CPP).
 
-- 에디터와 Android 모듈(SDK/NDK/OpenJDK)은 설치 완료:
-  `C:/Program Files/Unity/Hub/Editor/6000.3.24f1/Editor/Unity.exe`
-- 라이선스 파일 없음. `C:/ProgramData/Unity` 디렉터리 자체가 없습니다.
-- 사용자가 Unity Hub를 열어 계정 로그인 후 라이선스를 활성화해야 합니다.
+**라이선스 파일은 `C:/ProgramData/Unity`에 없습니다.** Hub가 MSIX라 아래로 가상화됩니다.
 
-이것 때문에 아직 못 한 것: Unity 임포트·컴파일·Play 모드, Android APK, 실기기 멀티터치와 손맛,
-단계 A 완료 판정, 첫 실제 플레이 기록.
+~~~text
+%LOCALAPPDATA%/Packages/UnityTechnologies.UnityHub_2vrhnee42bhxm/LocalCache/Local/Unity/licenses/UnityEntitlementLicense.xml
+~~~
 
-## 지금 할 수 있는 것
+경로 존재 여부로 판단하지 말고, 배치 모드로 에디터를 실제 실행해 확인하세요.
 
-라이선스와 무관하게 진행 가능한 작업입니다.
+## 남은 것 — 사람이 해야 하는 일
+
+빌드가 된다는 것과 재미있다는 것은 다릅니다. 자동 검증으로 대체하지 마세요.
+
+1. **Play 모드 확인** — 화면, 버튼, 이동·공격 동시 입력, 일시정지, 재시작, 기록 저장.
+2. **실기기 확인** — APK를 설치해 두 손 조작, 프레임, 가독성, 손의 피로.
+3. 위 결과를 들은 **뒤에** 전투 난이도를 조정합니다. 봇 결과만 보고 바꾸지 마세요.
+
+## 사람 없이 진행 가능한 일
+
+실험실 저장소에서:
 
 1. `compare_experiments` — 실험 저장·조회 구조부터 필요합니다.
 2. `create_balance_candidate` — 설정 후보 버전 관리. 기존 설정을 덮어쓰지 않고 새 후보로 남깁니다.
 3. `Create_Balance_Report` HTML 템플릿 뼈대 — 외부 CDN 없이 열리는 단일 파일이 목표입니다.
 4. `analyze_playtests`는 **지금 만들어도 읽을 대상이 없습니다.** 사람의 플레이 기록이 0건입니다.
+
+게임 저장소에서:
+
+5. 단계 E용 확인 항목: 개발 빌드에 `android.permission.INTERNET`이 들어갑니다(프로파일러용).
+   오프라인 게임이므로 출시 빌드에서 빠지는지 확인해야 합니다.
 
 ## 검증 명령
 
@@ -64,11 +85,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -File D:\Project\PetThemGame\scrip
 powershell -NoProfile -ExecutionPolicy Bypass -File D:\Project\PetThemBalanceLab\scripts\check.ps1
 ~~~
 
-라이선스가 생긴 뒤 Unity 컴파일 확인:
+Unity 컴파일 확인 (로그 파일을 지정하고 `error CS`를 세는 편이 확실합니다):
 
 ~~~powershell
-& "C:/Program Files/Unity/Hub/Editor/6000.3.24f1/Editor/Unity.exe" -batchmode -quit -projectPath D:/Project/PetThemGame/game -logFile -
+$log = "$env:TEMP\unity-import.log"
+& "C:/Program Files/Unity/Hub/Editor/6000.3.24f1/Editor/Unity.exe" `
+  -batchmode -quit -projectPath D:/Project/PetThemGame/game -logFile $log
 ~~~
+
+Android 개발 APK 빌드:
+
+~~~powershell
+& "C:/Program Files/Unity/Hub/Editor/6000.3.24f1/Editor/Unity.exe" `
+  -batchmode -quit -projectPath D:/Project/PetThemGame/game -buildTarget Android `
+  -executeMethod PetThem.Editor.PrototypeSetup.BuildAndroid -logFile $log
+~~~
+
+결과물은 `game/Builds/PetThem-development.apk` (Git 제외).
 
 ## 넘겨받는 사람이 알아야 할 함정
 
@@ -79,6 +112,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File D:\Project\PetThemBalanceLab
 - PowerShell에서 `Select-Object -First N`으로 `dotnet run` 출력을 자르면 파이프가 끊겨 종료 코드 255가 납니다.
   실패가 아닙니다.
 - Unity Hub는 MSIX라 `C:/Program Files/WindowsApps`에 설치됩니다. 일반 Program Files 경로만 보면 못 찾습니다.
+  라이선스 파일도 같은 이유로 `C:/ProgramData/Unity`가 아니라 패키지 LocalCache에 들어갑니다.
+- **Unity.exe를 배치 모드로 띄우면 셸 래퍼가 먼저 반환됩니다.** 종료 코드가 비어 있고 로그도 짧게 보입니다.
+  프로세스가 아직 살아 있는 것이니 `Unity.exe`가 사라질 때까지 기다린 뒤 로그를 읽으세요.
+- Unity 로그의 `Licensing Client signature ... Code 10`과 `LicensingClient has failed validation; ignoring`은
+  MSIX 서명 검증 경고입니다. 바로 뒤에 `Successfully resolved entitlement details`가 나오면 정상입니다.
 - 실험실의 출력 경로는 `experiments/` 밖이면 거부됩니다. 의도된 동작입니다.
 
 ## 측정된 사실 (해석 주의)
