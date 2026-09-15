@@ -61,19 +61,41 @@ D:/Project/PetThemGame 에서 작업해 줘.
 2. **실기기 확인** — APK를 설치해 두 손 조작, 프레임, 가독성, 손의 피로.
 3. 위 결과를 들은 **뒤에** 전투 난이도를 조정합니다. 봇 결과만 보고 바꾸지 마세요.
 
+## 실험실 상태 (MCP 도구 10개 동작)
+
+`compare_experiments`, `create_balance_candidate`, `Create_Balance_Report`까지 전부 구현하고 검증했습니다.
+검사 14개 통과. 실제로 보고서를 만들어 봤습니다: `reports/balance-01.html`.
+
+한 바퀴 돌려보려면:
+
+~~~powershell
+cd D:\Project\PetThemBalanceLab
+dotnet build src/McpServer -c Release
+./scripts/mcp-call.ps1 run_simulation '{"runs":5,"seed":42,"label":"기준","outputDirectory":"demo"}'
+./scripts/mcp-call.ps1 list_experiments '{"limit":5}'
+./scripts/mcp-call.ps1 Create_Balance_Report '{"baselineExperimentId":"exp-...","outputPath":"r.html"}'
+~~~
+
+**남은 도구는 `analyze_playtests` 하나**이고, 막고 있는 것은 기술이 아니라 데이터입니다.
+사람의 플레이 기록이 0건이라 구현해도 읽을 대상이 없습니다.
+
 ## 사람 없이 진행 가능한 일
 
-실험실 저장소에서:
-
-1. `compare_experiments` — 실험 저장·조회 구조부터 필요합니다.
-2. `create_balance_candidate` — 설정 후보 버전 관리. 기존 설정을 덮어쓰지 않고 새 후보로 남깁니다.
-3. `Create_Balance_Report` HTML 템플릿 뼈대 — 외부 CDN 없이 열리는 단일 파일이 목표입니다.
-4. `analyze_playtests`는 **지금 만들어도 읽을 대상이 없습니다.** 사람의 플레이 기록이 0건입니다.
-
-게임 저장소에서:
-
-5. 단계 E용 확인 항목: 개발 빌드에 `android.permission.INTERNET`이 들어갑니다(프로파일러용).
+1. **한 번에 한 값만 바꾼 후보로 나눠 실험.** 현재 후보 `cand-contact-probe`는 네 값을 동시에 바꿔서
+   어느 변경이 얼마나 기여했는지 분리할 수 없습니다. `punchRange`만, `gruntSpeed`만 식으로 나누세요.
+2. 표본을 20~50회로 늘려 시드 변동 폭 확인. 현재 5회는 방향만 볼 수 있는 수준입니다.
+3. 보고서의 인쇄 레이아웃과 화면 낭독기 동작 확인. 아직 검증 안 했습니다.
+4. 단계 E용 확인 항목: 개발 빌드에 `android.permission.INTERNET`이 들어갑니다(프로파일러용).
    오프라인 게임이므로 출시 빌드에서 빠지는지 확인해야 합니다.
+
+## 지금 알고 있는 밸런스 상태
+
+두 가지가 **동시에** 관찰됩니다. 서로 다른 문제이고 수정 방향도 다를 수 있습니다.
+
+1. 봇이 한 번도 맞지 않습니다. 제자리에 서 있는 봇조차 그렇습니다.
+2. 살아 있는 적이 첫 30초 평균 4.6에서 마지막 평균 95.2로 쌓입니다. 상한이 100입니다.
+
+1번만 보고 "너무 쉽다"로 결론내지 마세요. 적은 계속 쌓이고 있습니다.
 
 ## 검증 명령
 
