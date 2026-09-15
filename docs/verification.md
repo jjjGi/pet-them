@@ -41,10 +41,32 @@ check.ps1은 현재 PowerShell 실행 정책을 시스템 전체에 변경하지
 - Android APK 빌드 및 실제 기기 멀티터치·프레임 성능·가독성.
 - Unity와 .NET에서 같은 전투 조건을 실행한 결과 비교.
 - 실제 플레이 재미와 손의 피로.
-- MCP 및 HTML 보고서: 아직 구현하지 않음.
+- MCP 및 HTML 보고서: 아직 구현하지 않음. (MCP는 아래 실험실 분리 항목에서 진행됨)
 
 ### Unity 설치 진행
 
 Unity Hub 3.21.2를 winget으로 설치했다. MSIX 패키지 형태라 일반 Program Files/Unity Hub 경로 대신 WindowsApps에 설치된다.
 Hub headless 설치로 Unity 6000.3.24f1 및 Android 모듈 다운로드를 시작했다.
 에디터 설치 완료와 계정·라이선스 인증 상태를 확인한 뒤 위 미검증 항목을 진행한다.
+
+## 2026-09-16 — 실험실 분리
+
+봇 시뮬레이터를 별도 저장소 jjjGi/pet-them-balance-lab으로 옮겼다.
+이관 전후로 시드 42~46의 이벤트 스트림이 바이트 단위로 동일함을 확인했다 (각 1668~1695 이벤트).
+처치 수도 위 표와 같다. 이관이 전투 동작을 바꾸지 않았다.
+
+이 저장소의 scripts/check.ps1은 이제 전투 규칙 검증 12개만 실행한다.
+봇 시뮬레이션과 MCP 검증은 실험실 저장소의 scripts/check.ps1에 있다.
+
+### 실험실 쪽에서 새로 측정된 것
+
+제자리에 서서 펀치만 반복하는 봇도 180초 동안 한 번도 맞지 않는다 (시드 42~46, 평균 처치 237.6).
+"회피하는 봇이 피해 없이 생존할 수 있다"보다 더 강한 결과다. 회피조차 필요 없다.
+자세한 수치는 실험실 저장소의 docs/verification.md에 있다.
+
+### Unity 설치 상태 (재확인)
+
+- 에디터: C:/Program Files/Unity/Hub/Editor/6000.3.24f1/Editor/Unity.exe — 설치됨.
+- Android: AndroidPlayer / SDK / NDK / OpenJDK — 모두 설치됨.
+- 라이선스: C:/ProgramData/Unity 디렉터리 자체가 없고 라이선스 파일도 없다. **미활성.**
+  사용자가 Unity Hub에서 직접 로그인하고 라이선스를 활성화해야 에디터를 실행할 수 있다.

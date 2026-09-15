@@ -10,7 +10,7 @@
 - 60 Hz 공통 C# 전투 코어: 이동, 방향 펀치, 밀치기, 자동 공격 펫, 추격형·돌진형 적, 웨이브, 승리·패배·중도 종료.
 - Unity 프로토타입 소스: 모바일 멀티터치, PC 입력, 시작·일시정지·재시작, 임시 도형 그래픽.
 - 외부 JSON 밸런스 설정과 JSONL 실행 기록.
-- 같은 전투 코드를 사용하는 .NET 시뮬레이터와 핵심 규칙 검증 도구.
+- 전투 코어를 UnityEngine 없이 실행하는 핵심 규칙 검증 도구 (tools/CoreChecks).
 
 **Unity 에디터 실행·Android 실기기 검증은 아직 완료하지 않았습니다.**
 화살·레이저·레벨업 선택·상점·MCP·HTML 보고서는 후속 단계입니다.
@@ -36,18 +36,25 @@ Android 개발 APK: **PET THEM > Build Android development APK**. 개발 빌드�
 .NET SDK 10.0.400 이상 같은 패치 계열이 필요합니다. 저장소 루트에서 실행합니다.
 
 ~~~powershell
-dotnet run --project tools/CoreChecks -c Release
-dotnet run --project balance-lab/simulator -c Release -- --runs 5 --seed 42
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check.ps1
 ~~~
 
-시뮬레이터 설정:
+전투 규칙 검증 12개를 실행합니다.
+
+## 밸런스 실험실은 별도 저장소입니다
+
+봇 시뮬레이터, MCP 서버, 기록 분석, HTML 보고서 생성기는
+[jjjGi/pet-them-balance-lab](https://github.com/jjjGi/pet-them-balance-lab) (비공개)에 있습니다.
+
+그 저장소는 이 저장소의 전투 코어와 밸런스 설정을 **복사하지 않고 참조**합니다.
+두 폴더를 나란히 두거나 `PETTHEM_GAME_ROOT` 환경 변수로 이 저장소의 경로를 알려주면 됩니다.
 
 ~~~powershell
-dotnet run --project balance-lab/simulator -c Release -- --config game/Assets/Resources/balance-default.json --output experiments/smoke --runs 5 --seed 42
+# 실험실 저장소에서
+dotnet run --project src/Simulator -c Release -- --runs 5 --seed 42
 ~~~
 
-생성되는 JSONL과 요약 JSON은 experiments/에 저장되며 Git에서 제외됩니다.
-봇은 정해진 궤도로 이동하며 자동 조준 펀치를 반복합니다. **실제 사람의 실력·조작감·재미를 측정하는 도구가 아닙니다.**
+봇은 정해진 정책으로 이동하며 자동 조준 펀치를 반복합니다. **실제 사람의 실력·조작감·재미를 측정하는 도구가 아닙니다.**
 
 ## 밸런스 설정과 기록
 
@@ -64,3 +71,4 @@ dotnet run --project balance-lab/simulator -c Release -- --config game/Assets/Re
 
 [PROJECT.md](PROJECT.md)에 합의한 기획, 단계별 완료 기준, MCP 도구와 Create_Balance_Report 상세 요구사항이 있습니다.
 [AGENTS.md](AGENTS.md)에 검증·문서 갱신·자동 커밋과 푸시 지침이 있습니다.
+밸런스 실험실 쪽 작업은 [jjjGi/pet-them-balance-lab](https://github.com/jjjGi/pet-them-balance-lab)의 README와 AGENTS.md를 따릅니다.

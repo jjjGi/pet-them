@@ -3,7 +3,8 @@
 > 가칭: **PET THEM! / 펫 뎀!**
 > 개발 도구: **PET THEM! Balance Lab**
 > 마지막 정리: 2026-09-16
-> 상태: 첫 전투 프로토타입 소스 및 .NET 검증 완료 / Unity 실행·Android 실기기·MCP·HTML 보고서 검증 및 구현 진행 예정
+> 상태: 전투 프로토타입 소스와 .NET 검증 완료. MCP 서버는 별도 저장소에서 동작 확인.
+> 남은 것: Unity 라이선스 활성화(사용자), Unity 실행·Android 실기기 검증, HTML 보고서.
 > 이 문서는 새 대화나 다른 개발 환경에서도 작업을 이어가기 위한 기준 문서다.
 
 ## 1. 프로젝트 목표
@@ -208,28 +209,38 @@ Pet은 반려동물이라는 명사이면서 쓰다듬다는 동사다. Pet them
 | 초기 게임 서버 | 없음 |
 | 초기 LLM 호출 | 개발용 AI 클라이언트에서 MCP 사용, 게임 실행에는 불필요 |
 
-예정 디렉터리:
+### 저장소 분리
+
+사용자 지시 (2026-09-16): **밸런스 실험실과 MCP는 별도의 비공개 GitHub 저장소로 만든다.**
+
+| 저장소 | 로컬 경로 | 담는 것 |
+| --- | --- | --- |
+| [jjjGi/pet-them](https://github.com/jjjGi/pet-them) | D:/Project/PetThemGame | Unity 게임, 공통 전투 코어, 밸런스 설정, 전투 규칙 검증 |
+| [jjjGi/pet-them-balance-lab](https://github.com/jjjGi/pet-them-balance-lab) | D:/Project/PetThemBalanceLab | MCP 서버, 봇 시뮬레이터, 기록 분석, HTML 보고서 생성기 |
+
+두 저장소를 나눈 뒤에도 **전투 규칙의 원본은 게임 저장소 하나뿐이다.**
+실험실은 `Directory.Build.props`의 `PetThemGameRoot`로 게임 저장소의 소스를 직접 컴파일한다.
+복사본을 만들지 않으므로 두 곳의 공식이 갈라질 수 없다.
+경로는 `PETTHEM_GAME_ROOT` 환경 변수로 바꿀 수 있고, 경로가 틀리면 빌드가 이유를 말하며 멈춘다.
 
 ~~~text
-pet-them/
-  PROJECT.md
-  game/                 Unity 프로젝트
-  packages/
-    combat-core/        게임과 실험실이 공유할 C# 전투 규칙
-  balance-lab/
-    simulator/          반복 실험 실행기
-    analysis/           기록 분석과 지표 계산
-    mcp-server/         MCP 도구 제공
-    report/             HTML 템플릿·차트·설명 구성
-  configs/              버전 관리할 밸런스 설정
-  samples/              명확히 표시한 예시 기록
-  experiments/          조건·설정·결과
-  reports/              생성한 HTML 보고서
-  docs/                 상세 설계·검증 기록
+PetThemGame/                         jjjGi/pet-them
+  game/                              Unity 프로젝트
+  packages/com.petthem.combat-core/  공통 C# 전투 규칙 (단일 원본)
+  tools/CombatCore/                  위 소스의 netstandard2.1 빌드
+  tools/CoreChecks/                  전투 규칙 검증
+  docs/                              telemetry, verification
+
+PetThemBalanceLab/                   jjjGi/pet-them-balance-lab
+  src/CombatCore/                    게임 저장소의 전투 소스를 참조해 빌드
+  src/BalanceLab/                    설정 로딩, 봇 정책, 실험 실행, 기록 읽기
+  src/Simulator/                     반복 실험 CLI
+  src/McpServer/                     MCP 도구 제공 (stdio)
+  tools/LabChecks/                   실험실 검증 + MCP 통신 검사
+  experiments/  reports/             생성 결과, Git 제외
 ~~~
 
-위 구조는 최초 계획이며 현재 구현한 실제 경로는 13절에 정리한다.
-Unity와 .NET이 함께 사용할 수 있는 타깃 프레임워크 및 패키지 참조 방식을 먼저 검증한다.
+한 커밋으로 두 저장소를 묶을 수 없다. 양쪽을 바꿨으면 각각 커밋하고 메시지에서 서로를 언급한다.
 
 ### 공통 전투 로직 원칙
 
@@ -247,14 +258,21 @@ Unity와 .NET이 함께 사용할 수 있는 타깃 프레임워크 및 패키�
 사용자가 명시한 **Create_Balance_Report**는 그대로 제공한다.
 SDK의 명명 제약이 있다면 연결 전에 확인하고 변경 이유를 기록한다.
 
-| 도구 | 기능 |
-| --- | --- |
-| get_balance_config | 무기·펫·적·웨이브 등의 설정 조회 |
-| run_simulation | 시나리오, 조합, 시드 목록, 조작 정책으로 반복 실험 |
-| compare_experiments | 동일하거나 비교 가능한 조건의 결과 비교 |
-| analyze_playtests | 실제 플레이 기록에서 정체 및 관련 현상 분석 |
-| create_balance_candidate | 근거와 변경 내역을 포함한 새 설정 후보 저장 |
-| Create_Balance_Report | 분석과 실험 결과를 결합한 독립 실행 HTML 보고서 생성 |
+| 도구 | 기능 | 상태 |
+| --- | --- | --- |
+| get_lab_status | 실제로 구현된 도구와 참조 경로 보고 | 구현 |
+| get_balance_config | 무기·펫·적·웨이브 등의 설정 조회 | 구현 |
+| list_bot_policies | 사용 가능한 봇 정책과 각 정책의 한계 | 구현 |
+| run_simulation | 시나리오, 조합, 시드 목록, 조작 정책으로 반복 실험 | 구현 |
+| read_run_log | JSONL 기록의 실제 내용 확인, 불완전 기록 판별 | 구현 |
+| compare_experiments | 동일하거나 비교 가능한 조건의 결과 비교 | 미구현 |
+| analyze_playtests | 실제 플레이 기록에서 정체 및 관련 현상 분석 | 미구현 |
+| create_balance_candidate | 근거와 변경 내역을 포함한 새 설정 후보 저장 | 미구현 |
+| Create_Balance_Report | 분석과 실험 결과를 결합한 독립 실행 HTML 보고서 생성 | 미구현 |
+
+계획에 없던 get_lab_status와 read_run_log를 먼저 넣었다.
+전자는 모델이 없는 기능을 있다고 말하는 것을 막고, 후자는 보고할 수치를 원본 기록으로 되짚기 위한 것이다.
+도구별 입력 스키마와 한도는 실험실 저장소의 docs/mcp-tools.md에 있다.
 
 원하는 자연어 사용 예:
 
@@ -454,18 +472,26 @@ MCP의 서버는 반드시 클라우드 서버를 의미하지 않는다.
 - [x] 전투 규칙 자동 검증 12개 통과, 시뮬레이터 빌드 경고·오류 0.
 - [x] 봇 5회 실행과 로그의 종료·스냅샷·처치 수 검증.
 - [x] Unity Hub 설치 및 에디터·Android 모듈 다운로드 시작.
+- [x] 프로토타입 소스 전체 GitHub 푸시 (커밋 4b57c8e).
+- [x] Unity 6000.3.24f1 에디터 + Android SDK/NDK/OpenJDK 설치 완료 확인.
+- [x] 밸런스 실험실을 별도 비공개 저장소 jjjGi/pet-them-balance-lab으로 분리.
+- [x] 봇 시뮬레이터를 실험실 저장소로 이관. 시드 42~46 이벤트 스트림이 이관 전후 바이트 단위로 동일함을 확인.
+- [x] MCP stdio 서버 구현 및 실제 프로토콜 통신 검증 (initialize / tools/list / tools/call).
+- [x] MCP 도구 5개 구현: get_lab_status, get_balance_config, list_bot_policies, run_simulation, read_run_log.
+- [x] 실험실 검증 9개 통과.
 
 ### 아직 완료하지 않은 작업
 
-- [ ] Unity 6000.3.24f1와 Android 하위 모듈 설치 완료 확인.
-- [ ] Unity 계정·라이선스 활성화 확인 (사용자가 직접 로그인).
+- [ ] Unity 계정 로그인 및 라이선스 활성화 (사용자가 직접 해야 함). 현재 라이선스 파일 없음.
 - [ ] Unity 프로젝트 실제 임포트·컴파일·Play 모드 검증.
 - [ ] Unity와 .NET의 대표 전투 결과 대조.
 - [ ] Android APK 빌드 및 실기기 입력·성능·손맛 확인.
 - [ ] 단계 A 전체 완료 판정: 소스 작성만으로 완료 처리하지 않는다.
 - [ ] 첫 실제 플레이 기록 및 HTML 보고서 생성.
-- [ ] MCP 도구 및 Create_Balance_Report 구현.
+- [ ] 남은 MCP 도구와 Create_Balance_Report 구현 (compare_experiments, analyze_playtests, create_balance_candidate).
+- [ ] MCP 서버를 실제 AI 클라이언트에 등록해 자연어 요청부터 끝까지 시연.
 - [ ] 화살·레이저·펫·3중 택1 성장·상점 확장.
+- [ ] 전투 난이도 조정. 봇 기준으로는 현재 설정에 위험이 없음이 측정됐다 (아래 참조).
 - [ ] 밸런스 검증 및 출시.
 
 ### 현재 파일 구조
@@ -474,7 +500,6 @@ MCP의 서버는 반드시 클라우드 서버를 의미하지 않는다.
 - packages/com.petthem.combat-core/Runtime/: UnityEngine 의존성이 없는 공통 C# 소스.
 - tools/CombatCore/: 동일 소스를 참조하는 netstandard2.1 빌드 프로젝트.
 - tools/CoreChecks/: 외부 테스트 패키지가 필요 없는 핵심 규칙 검증 실행기.
-- balance-lab/simulator/: .NET 10 봇 시뮬레이션과 JSONL 기록.
 - game/Assets/Resources/balance-default.json: 현재 기본 설정의 단일 원본.
 - docs/telemetry.md: 로그 필드, 종료 처리, 재현 범위.
 - docs/verification.md: 실제 검사 결과와 미검증 사항.
@@ -487,35 +512,51 @@ MCP의 서버는 반드시 클라우드 서버를 의미하지 않는다.
 
 ### 환경과 현재 한계
 
-- 작업 폴더: D:/Project/PetThemGame / Windows / PowerShell.
+- 작업 폴더: D:/Project/PetThemGame / Windows 11 / PowerShell. 실험실은 D:/Project/PetThemBalanceLab.
 - .NET SDK: 10.0.400 (global.json). 9.0.203도 설치되어 있다.
-- 사용자가 Unity 미설치 상태를 확인했고 Unity Hub 3.21.2를 설치했다.
-- Hub는 MSIX 형태로 WindowsApps에 설치된다. 기본 Program Files/Unity Hub 경로만 검사하지 않는다.
-- Unity 6000.3.24f1과 Android 모듈 설치를 headless 방식으로 시작했다. 완료 여부는 다음 작업 전에 실제로 확인한다.
+- Unity Hub 3.21.2는 MSIX 형태로 WindowsApps에 설치된다. 기본 Program Files/Unity Hub 경로만 검사하지 않는다.
+- Unity 에디터 설치 완료: `C:/Program Files/Unity/Hub/Editor/6000.3.24f1/Editor/Unity.exe`.
+  Android 모듈(AndroidPlayer, SDK, NDK, OpenJDK)도 모두 있다.
+- **Unity 라이선스는 아직 활성화되지 않았다.** `C:/ProgramData/Unity` 자체가 없고 라이선스 파일도 없다.
+  Unity Hub에서 사용자가 직접 계정 로그인과 라이선스 활성화를 해야 에디터를 실행할 수 있다.
 - 게임 그래픽과 영어 UI는 조작 검증용 임시 구현이다. 최종 아트·현지화는 미완료.
-- 원형 이동 봇 5회는 모두 180초·체력 100으로 생존했다. 난이도 조정 전 초기 설정이며 사람의 난이도와 혼동하지 않는다.
+- **현재 설정은 봇 기준으로 위험이 없다.** 제자리에 서서 펀치만 반복하는 봇조차 180초 동안 한 번도 맞지 않는다.
+  펀치 사거리·쿨다운 대비 피해량이 커서 적이 접촉 거리에 닿기 전에 죽는다.
+  이것은 관찰된 결과이며, 사람이 직접 조작해 보기 전에는 수치를 바꾸지 않는다.
 - 실제 기록은 완전한 입력 리플레이가 아니다. 인간 플레이 재현은 후속 구현이다.
+- 사람의 플레이 기록은 아직 0건이다. 그래서 analyze_playtests 계열은 구현해도 실행해 볼 대상이 없다.
 - 현재 세션 권한을 다음 세션 권한으로 단정하지 않는다.
 
 ### 다음 세션에서 시작할 순서
 
-1. 이 문서, AGENTS.md, README.md와 실제 Git 상태를 읽는다.
-2. Unity 설치·라이선스·진행 중인 설치 프로세스를 확인한다. 설치가 진행 중이면 중복 실행하지 않는다.
-3. 에디터가 준비되면 game/을 열고 PET THEM > Create or open prototype scene으로 설정을 정리한다.
+1. 이 문서, AGENTS.md, README.md와 실제 Git 상태를 읽는다. 실험실 저장소도 함께 확인한다.
+2. **Unity 라이선스 활성화 여부를 먼저 확인한다.** `C:/ProgramData/Unity/Unity_lic.ulf`가 있는지 본다.
+   없으면 사용자가 Unity Hub에서 로그인·라이선스 활성화를 해야 한다. 에이전트가 대신 할 수 없다.
+   이 단계에서 막히면 아래 3~5번은 시도하지 말고, 대신 8번으로 간다.
+3. 라이선스가 있으면 game/을 열고 PET THEM > Create or open prototype scene으로 설정을 정리한다.
+   배치 모드 컴파일 확인 명령:
+   `& "C:/Program Files/Unity/Hub/Editor/6000.3.24f1/Editor/Unity.exe" -batchmode -quit -projectPath game -logFile -`
 4. Unity 컴파일 오류를 해결하고 시작·이동·공격·일시정지·재시작·기록 저장을 검증한다.
 5. Android 개발 빌드와 실제 기기의 동시 이동·공격을 확인한다.
-6. 손맛을 확인한 뒤 전투 난이도를 조정하고 첫 실제 기록 기반 보고서로 진행한다.
-7. 검증 결과와 다음 작업을 갱신한 뒤 구현 단위로 커밋·푸시한다.
+6. 손맛을 확인한 뒤 전투 난이도를 조정한다. 봇 결과만 보고 조정하지 않는다.
+7. 첫 실제 플레이 기록을 남기고 실험실의 analyze_playtests·Create_Balance_Report로 이어간다.
+8. Unity가 막혀 있는 동안 진행 가능한 일: 실험실의 compare_experiments와 create_balance_candidate 구현,
+   실험 저장 구조 설계, Create_Balance_Report의 HTML 템플릿 뼈대.
+9. 검증 결과와 다음 작업을 갱신한 뒤 구현 단위로 커밋·푸시한다. 두 저장소는 각각 커밋한다.
 
 Unity 없이 가능한 검증:
 
 ~~~powershell
-dotnet run --project tools/CoreChecks -c Release
-dotnet run --project balance-lab/simulator -c Release -- --runs 5 --seed 42
+# 게임 저장소
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check.ps1
+
+# 실험실 저장소 (D:/Project/PetThemBalanceLab)
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check.ps1
 ~~~
 
 실험실 전체나 범용 프레임워크를 먼저 만드는 것으로 조작 검증을 지연하지 않는다.
 첫 목표는 **펀치와 펫 하나만으로 3분이 재미있는가**를 확인하는 것이다.
+봇 시뮬레이션은 이 질문에 답하지 못한다. 사람이 직접 만져 봐야 한다.
 
 재개 요청 예:
 
@@ -560,6 +601,8 @@ dotnet run --project balance-lab/simulator -c Release -- --runs 5 --seed 42
 - 커밋 작성자: jjjGi / GitHub noreply 이메일 (이 저장소에만 설정).
 - 첫 업로드 대상: PROJECT.md, AGENTS.md, .gitignore. 실제 푸시 상태는 git status와 origin/main 비교로 확인한다.
 - 게임 구현: 첫 프로토타입 소스 작성 및 공통 전투 규칙 검증 완료. Unity/Android 실행 검증은 13절 참조.
+- 실험실 원격 저장소: https://github.com/jjjGi/pet-them-balance-lab (비공개). 로컬 D:/Project/PetThemBalanceLab.
+- 실험실 저장소는 사용자 지시에 따라 MCP를 별도 비공개 저장소로 두기 위해 만들었다. 7절의 저장소 분리 참조.
 
 ### 추가 변경 기록
 
@@ -567,3 +610,5 @@ dotnet run --project balance-lab/simulator -c Release -- --runs 5 --seed 42
 - 2026-09-16: jjjGi 계정 인증과 비공개 GitHub 저장소 생성 완료. 첫 커밋은 기획 문서·개발 지침·Git 제외 규칙으로 구성. 문서와 Git 설정 변경이므로 게임 테스트 대상은 없으며, git diff --cached --check로 형식을 검증한다.
 
 - 2026-09-16: 공통 전투 코어·Unity 프로토타입·봇 시뮬레이터·로그 스키마 구현. 규칙 검증 12개 및 5회 봇 실행 완료. Unity 실행·실기기 검증과 MCP·보고서는 미완료로 구분.
+
+- 2026-09-16: 프로토타입 소스 전체를 GitHub에 푸시(4b57c8e). 사용자 지시에 따라 밸런스 실험실과 MCP를 별도 비공개 저장소 jjjGi/pet-them-balance-lab으로 분리. 봇 시뮬레이터를 그쪽으로 이관하고 시드 42~46의 이벤트 스트림이 이관 전후 동일함을 확인. MCP stdio 서버와 도구 5개를 구현하고 실제 프로토콜 통신까지 검증. Unity 에디터·Android 모듈 설치 완료 확인, 라이선스는 미활성.
