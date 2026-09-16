@@ -111,10 +111,105 @@ Check("enemy count stays within cap", () =>
         petRange = .001f, spawnInterval = .01f, minSpawnInterval = .01f },1);
     for (int i = 0; i < 1000; i++) { world.Step(default); True(world.Enemies.Count <= 3); }
 });
+Check("XP from kills offers three unique upgrades and freezes the combat clock", () =>
+{
+    var world = ProgressionWorld();
+    UntilChoice(world);
+    True(world.Kills == 5 && world.Experience == 5 && world.Level == 1);
+    True(world.UpgradeChoices.Count == 3 && world.UpgradeChoices.Select(c => c.Id).Distinct().Count() == 3);
+    int tick = world.Tick; float hp = world.Health; int kills = world.Kills;
+    world.Step(new PlayerInput(new Vec2(1,0), default, true));
+    True(world.Tick == tick && world.Kills == kills); Near(world.Health, hp);
+    True(!world.ChooseUpgrade((UpgradeId)999));
+    True(world.HasUpgradeChoice && world.Level == 1);
+    var selected = world.UpgradeChoices[0].Id;
+    True(world.ChooseUpgrade(selected));
+    True(world.Level == 2 && world.Experience == 0 && world.UpgradeRank(selected) == 1);
+    True(world.Events.Count(e => e.type == "upgrade") == 1 && world.Events.Count(e => e.type == "level_up") == 1);
+    True(!world.ChooseUpgrade(selected));
+    world.Step(default); True(world.Tick == tick + 1);
+});
+Check("progression rolls and chosen upgrades reproduce with the same seed", () =>
+{
+    var a = ProgressionWorld(); var b = ProgressionWorld();
+    var json = new JsonSerializerOptions { IncludeFields = true };
+    for (int i = 0; i < 1400; i++)
+    {
+        a.Step(default); b.Step(default);
+        True(JsonSerializer.Serialize(a.Events, json) == JsonSerializer.Serialize(b.Events, json));
+        if (a.HasUpgradeChoice)
+        {
+            True(a.UpgradeChoices.Select(c => c.Id).SequenceEqual(b.UpgradeChoices.Select(c => c.Id)));
+            a.ChooseUpgrade(a.UpgradeChoices[0].Id); b.ChooseUpgrade(b.UpgradeChoices[0].Id);
+            True(JsonSerializer.Serialize(a.Events, json) == JsonSerializer.Serialize(b.Events, json));
+        }
+    }
+    True(a.Level > 2); Near(a.GetConfig().punchDamage, b.GetConfig().punchDamage);
+});
+Check("capped upgrades stay bounded and a fresh run resets growth", () =>
+{
+    var world = ProgressionWorld();
+    for (int i = 0; i < 10000 && world.Level < CombatWorld.MaxLevel; i++)
+    {
+        world.Step(default);
+        if (!world.HasUpgradeChoice) continue;
+        var choice = world.UpgradeChoices.FirstOrDefault(c => c.Id == UpgradeId.PetHaste)
+            ?? world.UpgradeChoices.FirstOrDefault(c => c.Id == UpgradeId.PunchReach)
+            ?? world.UpgradeChoices[0];
+        world.ChooseUpgrade(choice.Id);
+        True(world.GetConfig().petCooldown >= .005f - .00001f);
+        True(world.UpgradeRank(UpgradeId.PetHaste) <= 5 && world.UpgradeRank(UpgradeId.PunchReach) <= 5);
+    }
+    True(world.Level == CombatWorld.MaxLevel && !world.HasUpgradeChoice);
+    True(world.UpgradeRank(UpgradeId.PetHaste) == 5);
+    var fresh = ProgressionWorld();
+    True(fresh.Level == 1 && fresh.Experience == 0 && !fresh.HasUpgradeChoice);
+    Near(fresh.GetConfig().petCooldown, .01f);
+    foreach (UpgradeId id in Enum.GetValues<UpgradeId>()) True(fresh.UpgradeRank(id) == 0);
+});
+Check("growth modifies this run only and health upgrades respect maximum health", () =>
+{
+    var config = new BalanceConfig { petRange = 100, petDamage = 1000, petCooldown = .01f,
+        spawnInterval = .01f, minSpawnInterval = .01f };
+    var world = new CombatWorld(config, 6, true);
+    while (world.Level < 8)
+    {
+        UntilChoice(world);
+        var choice = world.UpgradeChoices.FirstOrDefault(c => c.Id == UpgradeId.Vitality) ?? world.UpgradeChoices[0];
+        world.ChooseUpgrade(choice.Id);
+        True(world.Health <= world.MaxHealth);
+    }
+    True(world.UpgradeRank(UpgradeId.Vitality) > 0);
+    Near(world.MaxHealth, config.playerHealth * (1 + .2f * world.UpgradeRank(UpgradeId.Vitality)));
+    Near(config.playerHealth, 100); Near(config.petDamage, 1000);
+    world.Abandon();
+    True(!world.ChooseUpgrade(UpgradeId.Vitality));
+});
+Check("multi-kill XP overflow is kept for successive upgrade choices", () =>
+{
+    var config = new BalanceConfig { playerHealth = 100000, petRange = .001f,
+        punchRange = 100, punchDamage = 1000, spawnInterval = .01f, minSpawnInterval = .01f };
+    var world = new CombatWorld(config, 6, true);
+    for (int i = 0; i < 180; i++) world.Step(default);
+    for (int i = 0; i < 200 && !world.HasUpgradeChoice; i++) world.Step(new PlayerInput(default, default, true));
+    True(world.HasUpgradeChoice && world.Experience > 13);
+    int earned = world.Experience;
+    world.ChooseUpgrade(world.UpgradeChoices[0].Id);
+    True(world.Experience == earned - 5 && world.HasUpgradeChoice);
+    world.ChooseUpgrade(world.UpgradeChoices[0].Id);
+    True(world.Experience == earned - 13 && world.Level == 3);
+});
 Console.WriteLine(passed + " checks passed.");
 return;
 
 CombatWorld Safe() => new CombatWorld(new BalanceConfig { playerHealth = 100000 },42);
+CombatWorld ProgressionWorld() => new CombatWorld(new BalanceConfig { playerHealth = 100000,
+    petDamage = 1000, petRange = 100, petCooldown = .01f, spawnInterval = .01f, minSpawnInterval = .01f }, 42, true);
+void UntilChoice(CombatWorld world)
+{
+    for (int i = 0; i < 1200 && !world.HasUpgradeChoice && world.State == RunState.Playing; i++) world.Step(default);
+    True(world.HasUpgradeChoice);
+}
 void Check(string name, Action run) { run(); passed++; Console.WriteLine("PASS " + name); }
 void True(bool condition) { if (!condition) throw new Exception("Assertion failed."); }
 void Near(float a,float b) { if (Math.Abs(a-b) > .001f) throw new Exception(a + " != " + b); }

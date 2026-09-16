@@ -10,7 +10,9 @@ namespace PetThem.Game
         [Serializable]
         private sealed class Header
         {
-            public string type = "run_start", schemaVersion = "1", source = "human";
+            public string type = "run_start", schemaVersion = "2", source = "human";
+            public bool progressionEnabled;
+            public string progressionVersion = "kill-xp-1";
             public string runId, startedUtc, buildVersion, platform, unityVersion, configJson;
             public int seed;
             public float fixedStep = CombatWorld.StepSeconds;
@@ -27,6 +29,7 @@ namespace PetThem.Game
             writer.WriteLine(JsonUtility.ToJson(new Header {
                 runId = id, startedUtc = DateTime.UtcNow.ToString("O"), seed = world.Seed,
                 buildVersion = Application.version, platform = Application.platform.ToString(),
+                progressionEnabled = world.ProgressionEnabled,
                 unityVersion = Application.unityVersion, configJson = JsonUtility.ToJson(world.GetConfig())
             }));
             writer.Flush();

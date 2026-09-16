@@ -54,3 +54,21 @@ snapshot은 매 60스텝 및 정상 승패 판정 시 남깁니다.
 - 임의의 초보자·숙련자 라벨을 붙이지 않습니다.
 - 전투 외 성장과 경제는 아직 구현 전이므로 관련 정체 분석도 아직 불가능합니다.
 - 체력·웨이브 등은 규칙 데이터이며, 원인 가설과 구분해 보고해야 합니다.
+
+## v2 — 한 판 성장 (게임 0.2.0)
+
+Unity 클라이언트 헤더의 schemaVersion은 이제 2다. progressionEnabled=true,
+progressionVersion=kill-xp-1을 함께 남긴다. configJson은 판 시작 시 기본 설정이다.
+
+- xp: 처치 경험치 획득. value=1, source=kill.
+- upgrade_offer: 제시한 카드마다 한 이벤트. source=UpgradeId, value=선택 시 랭크.
+- level_up: 실제 선택 성공. source=선택한 UpgradeId, value=새 레벨.
+- upgrade: 실제 적용. source=UpgradeId, value=선택 후 랭크.
+- 선택 화면 동안 고정 스텝·게임 시간은 진행하지 않는다.
+- ChooseUpgrade는 Step과 마찬가지로 이벤트 목록을 교체한다. 호출마다 즉시 한 번 기록한다.
+- 같은 스텝의 다중 처치 XP가 남으면 다음 선택지를 즉시 제시한다.
+- 레벨·강화는 해당 판에만 적용한다. 다시 시작하면 초기화된다.
+
+기존 실험실 봇은 성장 비활성 상태로 실행하며 v1 기록을 남긴다.
+보류한 analyze_playtests 초안도 v1 전용이다. 게임 완성 후 v2·무기·선택 정책 지원부터 갱신한다.
+이전 기록과 새 성장 게임 기록의 결과를 바로 합쳐 비교하지 않는다.

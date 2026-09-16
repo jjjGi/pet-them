@@ -58,7 +58,7 @@ namespace PetThem.Game
             CreateArena();
             player = CreateCreature("You", paper, 0.9f, 10, true).transform;
             pet = CreateCreature("Mochi", mint, 0.55f, 11, true).transform;
-            world = new CombatWorld(config, 42);
+            world = new CombatWorld(config, 42, enableProgression: true);
         }
 
         private void StartRun()
@@ -68,7 +68,7 @@ namespace PetThem.Game
             views.Clear();
             foreach (var view in transient) Destroy(view);
             transient.Clear(); transientEnds.Clear();
-            world = new CombatWorld(config, unchecked(Environment.TickCount));
+            world = new CombatWorld(config, unchecked(Environment.TickCount), enableProgression: true);
             started = true; paused = false; accumulator = 0; hurtFlash = 0;
             ClearInput();
             recordingError = "";
@@ -81,7 +81,13 @@ namespace PetThem.Game
             gameCamera.orthographicSize = Mathf.Max(config.arenaHalfHeight + 2.8f,
                 (config.arenaHalfWidth + 1) / gameCamera.aspect);
             if (Input.GetKeyDown(KeyCode.Escape) && started && world.State == RunState.Playing) TogglePause();
-            if (started && !paused && world.State == RunState.Playing)
+            if (started && !paused && world.State == RunState.Playing && world.HasUpgradeChoice)
+            {
+                if (Input.GetKeyDown(KeyCode.Alpha1)) SelectUpgrade(0);
+                else if (Input.GetKeyDown(KeyCode.Alpha2)) SelectUpgrade(1);
+                else if (Input.GetKeyDown(KeyCode.Alpha3)) SelectUpgrade(2);
+            }
+            else if (started && !paused && world.State == RunState.Playing)
             {
                 ReadInput();
                 accumulator += Mathf.Min(Time.unscaledDeltaTime, 0.1f);
@@ -93,6 +99,7 @@ namespace PetThem.Game
                     foreach (CombatEvent e in world.Events) ShowEvent(e);
                     accumulator -= CombatWorld.StepSeconds;
                     if (world.State != RunState.Playing) { EndRecording(false); ClearInput(); break; }
+                    if (world.HasUpgradeChoice) { ClearInput(); FlushRecording(); break; }
                 }
             }
             player.position = new Vector3(world.Position.x, world.Position.y, 0);
@@ -162,6 +169,12 @@ namespace PetThem.Game
         {
             moveFinger = attackFinger = -1;
             move = aim = queuedAim = new Vec2(); queuedPunch = false; accumulator = 0;
+        }
+        private void SelectUpgrade(int index)
+        {
+            if (paused || index < 0 || index >= world.UpgradeChoices.Count) return;
+            if (!world.ChooseUpgrade(world.UpgradeChoices[index].Id)) return;
+            RecordEvents(); FlushRecording(); ClearInput();
         }
         private void TogglePause() { paused = !paused; ClearInput(); FlushRecording(); }
         private void OnApplicationFocus(bool focus) { if (!focus && started) { paused = true; ClearInput(); FlushRecording(); } }
@@ -273,8 +286,8 @@ namespace PetThem.Game
             {
                 fx = new GameObject("Punch");
                 fx.transform.SetParent(transform);
-                fx.transform.position = player.position + new Vector3(e.x,e.y,0) * config.punchRange * .6f;
-                fx.transform.localScale = Vector3.one * config.punchRange;
+                fx.transform.position = player.position + new Vector3(e.x,e.y,0) * world.PunchRange * .6f;
+                fx.transform.localScale = Vector3.one * world.PunchRange;
                 var r = fx.AddComponent<SpriteRenderer>(); r.sprite = circle;
                 r.color = new Color(mint.r,mint.g,mint.b,.3f); r.sortingOrder = 8;
             }
@@ -327,7 +340,12 @@ namespace PetThem.Game
             if (started)
             {
                 Panel(new Rect(28,48,220,9),new Color(.3f,.35f,.38f));
-                Panel(new Rect(28,48,220 * world.Health / config.playerHealth,9),mint);
+                Panel(new Rect(28,48,220 * world.Health / world.MaxHealth,9),mint);
+                GUI.Label(new Rect(28,119,370,30),"LEVEL " + world.Level + (world.Level >= CombatWorld.MaxLevel ? "  /  MAX" :
+                    "  /  " + world.Experience + " / " + world.ExperienceToNextLevel + " XP"),small);
+                Panel(new Rect(28,153,220,7),new Color(.3f,.35f,.38f));
+                Panel(new Rect(28,153,220 * (world.Level >= CombatWorld.MaxLevel ? 1 :
+                    Mathf.Clamp01((float)world.Experience / world.ExperienceToNextLevel)),7),mint);
                 GUI.Label(new Rect(width-380,22,240,35),"WAVE " + world.Wave + "   /   " + world.Kills + " KOs",body);
                 if (world.State == RunState.Playing && GUI.Button(new Rect(width-110,15,88,43),paused ? "PLAY" : "II",button)) TogglePause();
                 GUI.Label(new Rect(28,666,400,30),"MOVE  /  WASD or left thumb",small);
@@ -344,6 +362,8 @@ namespace PetThem.Game
                     GUI.color = Color.white;
                 }
             }
+            if (started && !paused && world.State == RunState.Playing && world.HasUpgradeChoice)
+                DrawUpgradeChoices(width);
             if (!started || paused || world.State != RunState.Playing)
             {
                 Panel(new Rect(0,76,width,644),new Color(ink.r,ink.g,ink.b,.92f));
@@ -352,7 +372,7 @@ namespace PetThem.Game
                     paused && world.State == RunState.Playing ? "TAKE A BREATHER." :
                     world.State == RunState.Won ? "NICE PETTING." : "ONE MORE PAT?",title);
                 GUI.Label(new Rect(left,265,680,90),!started ?
-                    "Your hands. Their problem.\nSurvive 3 minutes with your pet Mochi." :
+                    "Survive 3 minutes with Mochi.\nEarn XP from KOs. Pick one of 3 upgrades." :
                     "Time " + FormatTime(world.Time) + "   /   " + world.Kills + " KOs   /   Wave " + world.Wave,heading);
                 GUI.Label(new Rect(left,370,680,90),!started ?
                     "Move with your left thumb. Tap the right side to punch.\nDrag before releasing to aim. Mochi attacks automatically.\nDesktop: WASD + mouse click. SPACE auto-targets." :
@@ -363,7 +383,25 @@ namespace PetThem.Game
                 if (started && paused && world.State == RunState.Playing &&
                     GUI.Button(new Rect(left+360,490,220,62),"RESTART",button)) StartRun();
                 GUI.Label(new Rect(left,575,680,70),recordingError.Length > 0 ? recordingError :
-                    started ? "Run log: " + recordingPath : "PROTOTYPE 0.1  /  TOUCH COMBAT LAB",small);
+                    started ? "Run log: " + recordingPath : "PROTOTYPE 0.2  /  SURVIVAL + UPGRADES",small);
+            }
+        }
+        private void DrawUpgradeChoices(float width)
+        {
+            Panel(new Rect(0,76,width,644),new Color(ink.r,ink.g,ink.b,.97f));
+            float left = 32, gap = 16, cardWidth = (width - 64 - gap * 2) / 3;
+            GUI.Label(new Rect(left,130,width-64,50),"LEVEL UP  /  CHOOSE YOUR NEXT PAT",heading);
+            GUI.Label(new Rect(left,187,width-64,50),"Combat is paused. Pick one card. Keyboard: 1 / 2 / 3.",body);
+            for (int i = 0; i < world.UpgradeChoices.Count; i++)
+            {
+                UpgradeChoice choice = world.UpgradeChoices[i];
+                float x = left + i * (cardWidth + gap);
+                Panel(new Rect(x,260,cardWidth,310),new Color32(34,57,65,255));
+                GUI.Label(new Rect(x+16,280,cardWidth-32,32),"OPTION " + (i+1) + "  /  RANK " + choice.Rank,small);
+                GUI.Label(new Rect(x+16,326,cardWidth-32,66),choice.Title,heading);
+                GUI.Label(new Rect(x+16,396,cardWidth-32,100),choice.Description,body);
+                if (GUI.Button(new Rect(x+16,508,cardWidth-32,46),"PICK " + (i+1),button))
+                { SelectUpgrade(i); break; }
             }
         }
         private static string FormatTime(float time) => ((int)time / 60).ToString("00") + ":" + ((int)time % 60).ToString("00");

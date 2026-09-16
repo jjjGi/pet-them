@@ -76,7 +76,7 @@ namespace PetThem.Combat
     }
 
     // No Unity physics or wall-clock time: the player and CLI advance the same 60 Hz rules.
-    public sealed class CombatWorld
+    public sealed partial class CombatWorld
     {
         public const float StepSeconds = 1f / 60;
         private readonly BalanceConfig config;
@@ -100,11 +100,15 @@ namespace PetThem.Combat
         public IReadOnlyList<CombatEvent> Events => eventView;
         public BalanceConfig GetConfig() => config.Copy();
 
-        public CombatWorld(BalanceConfig config, int seed)
+        public CombatWorld(BalanceConfig config, int seed, bool enableProgression = false)
         {
             if (config == null) throw new ArgumentNullException(nameof(config));
             config.Validate();
             this.config = config.Copy();
+            baseConfig = config.Copy();
+            ProgressionEnabled = enableProgression;
+            progressionRandom = unchecked((uint)seed) ^ 0xa341316c;
+            if (progressionRandom == 0) progressionRandom = 1;
             Seed = seed;
             random = unchecked((uint)seed);
             if (random == 0) random = 0x9e3779b9;
@@ -117,7 +121,7 @@ namespace PetThem.Combat
         {
             if (!input.move.IsFinite || !input.aim.IsFinite) throw new ArgumentException("Non-finite input.");
             events.Clear();
-            if (State != RunState.Playing) return;
+            if (State != RunState.Playing || HasUpgradeChoice) return;
             Tick++;
             int currentWave = 1 + (Tick - 1) / Frames(config.waveDuration);
             if (currentWave != wave) { wave = currentWave; Emit("wave", "world", 0, wave); }
@@ -184,6 +188,7 @@ namespace PetThem.Combat
             if (State == RunState.Playing && Tick >= Frames(config.duration))
             { State = RunState.Won; Emit("run_end", "survived", 0, Kills); }
             if (Tick % 60 == 0 || State != RunState.Playing) Emit("snapshot", "world", 0, Kills, Position);
+            PrepareUpgradeChoices();
         }
 
         public void Abandon()
@@ -233,7 +238,11 @@ namespace PetThem.Combat
             float actual = Math.Min(amount, enemy.Health);
             enemy.Health -= actual;
             Emit("damage", source, enemy.Id, actual, enemy.Position);
-            if (enemy.Health <= 0) { enemies.Remove(enemy); Kills++; Emit("kill", source, enemy.Id, 1, enemy.Position); }
+            if (enemy.Health <= 0)
+            {
+                enemies.Remove(enemy); Kills++; Emit("kill", source, enemy.Id, 1, enemy.Position);
+                AwardExperience();
+            }
         }
         private void Emit(string type, string source, int targetId, float value, Vec2 position = default)
         {
