@@ -13,14 +13,19 @@ D:/Project/PetThemGame 에서 작업해 줘.
 1. PROJECT.md, AGENTS.md, docs/handoff.md 를 읽고 실제 파일·git 상태와 대조해.
 2. Unity 라이선스는 이미 활성이야 (Unity Personal). 컴파일과 Android APK 빌드도 이미 성공했어.
    다시 확인하려면 배치 모드로 돌려봐. 파일 경로로 판단하지 마.
-3. 다음 할 일은 둘 중 하나야. 사용자에게 어느 쪽인지 물어봐.
-   - 게임: Play 모드 확인 후 전투 난이도 조정. 손맛은 사람이 봐야 하니 사용자에게 맡기고,
-     결과를 들은 뒤에 수치를 바꿔.
-   - 실험실(D:/Project/PetThemBalanceLab): compare_experiments 와
-     create_balance_candidate 구현, 그다음 Create_Balance_Report.
-4. 작업 단위마다 해당 저장소의 scripts/check.ps1 을 돌리고,
+3. 실험실(D:/Project/PetThemBalanceLab)의 MCP 도구 10개는 이미 동작해.
+   analyze_playtests 하나만 미구현이고, 막고 있는 건 코드가 아니라 데이터야.
+   사람의 플레이 기록이 0건이라 읽을 대상이 없어. 새로 만들려 하지 마.
+4. 다음 할 일은 사용자에게 물어봐. 내가 추천하는 순서는:
+   - (a) 한 번에 한 값만 바꾼 밸런스 후보로 나눠서 실험. 기존 후보는 네 값을 동시에 바꿔
+     기여도를 분리할 수 없어. 이건 사람 없이 지금 할 수 있어.
+   - (b) 사용자가 Play 모드로 손맛을 확인한 뒤 난이도 조정. 봇 결과만으로 수치를 바꾸지 마.
+5. 작업 단위마다 해당 저장소의 scripts/check.ps1 을 돌리고,
    PROJECT.md 현재 상태와 docs/verification.md 를 갱신한 뒤 커밋·푸시해.
    두 저장소는 각각 커밋해.
+
+알아둘 것: 봇이 한 번도 안 맞는 것과 적이 상한(100)까지 쌓이는 것이 동시에 관찰돼.
+서로 다른 문제니까 "너무 쉽다" 하나로 뭉뚱그리지 마.
 ~~~
 
 ## 저장소 두 개
