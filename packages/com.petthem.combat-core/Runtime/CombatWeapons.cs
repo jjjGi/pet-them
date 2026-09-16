@@ -95,7 +95,7 @@ namespace PetThem.Combat
             {
                 Enemy enemy = enemies[i];
                 Vec2 delta = enemy.Position - Position;
-                if (delta.Length <= config.punchRange + 0.35f &&
+                if (delta.Length <= config.punchRange + enemy.Radius &&
                     (delta.Length < 0.01f || Vec2.Dot(Facing, delta.Normalized) >= 0.15f))
                 {
                     Damage(enemy, config.punchDamage, "punch");
@@ -157,20 +157,23 @@ namespace PetThem.Combat
             for (int i = enemies.Count - 1; i >= 0; i--)
             {
                 Enemy enemy = enemies[i];
-                if (!WithinBeam(enemy.Position)) continue;
+                if (!WithinBeam(enemy.Position, enemy.Radius)) continue;
                 if (!reported) { Emit("attack", "laser", 0, damage, Facing); reported = true; }
                 Damage(enemy, damage, "laser");
             }
         }
 
-        /// <summary>Distance from the enemy to the beam segment, within half the beam width.</summary>
-        private bool WithinBeam(Vec2 point)
+        /// <summary>
+        /// Distance from the enemy's body to the beam segment. The enemy's centre must be in front
+        /// of the player: a beam that reached behind would not match what the player sees.
+        /// </summary>
+        private bool WithinBeam(Vec2 point, float radius)
         {
             Vec2 delta = point - Position;
             float along = Vec2.Dot(delta, Facing);
-            if (along < 0 || along > config.laserRange) return false;
-            Vec2 closest = Position + Facing * along;
-            return (point - closest).Length <= config.laserWidth * 0.5f + 0.35f;
+            if (along < 0) return false;
+            Vec2 closest = Position + Facing * Math.Min(along, config.laserRange);
+            return (point - closest).Length <= config.laserWidth * 0.5f + radius;
         }
 
         private void MoveProjectiles()
@@ -190,7 +193,7 @@ namespace PetThem.Combat
                     Enemy enemy = enemies[e];
                     // An arrow may only count once per enemy, or a slow arrow would tick repeatedly.
                     if (arrow.Hit.Contains(enemy.Id)) continue;
-                    if ((enemy.Position - arrow.Position).Length > config.arrowRadius + 0.4f) continue;
+                    if ((enemy.Position - arrow.Position).Length > config.arrowRadius + enemy.Radius) continue;
                     arrow.Hit.Add(enemy.Id);
                     arrow.PierceLeft--;
                     Damage(enemy, arrow.Damage, "arrow");

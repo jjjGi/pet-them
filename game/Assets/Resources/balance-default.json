@@ -1,5 +1,5 @@
 {
-  "version": "prototype-0.1",
+  "version": "prototype-0.3",
   "duration": 180,
   "arenaHalfWidth": 14,
   "arenaHalfHeight": 8,
@@ -32,5 +32,17 @@
   "laserWidth": 0.75,
   "laserHeatPerSecond": 36,
   "laserCoolPerSecond": 28,
-  "laserOverheatPenalty": 1.5
+  "laserOverheatPenalty": 1.5,
+  "bruteHealth": 80,
+  "bruteSpeed": 0.85,
+  "bruteContactDamage": 18,
+  "bruteShare": 0.16,
+  "bossSpawnTime": 120,
+  "bossHealth": 1800,
+  "bossSpeed": 1.05,
+  "bossContactDamage": 26,
+  "bossRadius": 1.9,
+  "coinsPerKill": 1,
+  "coinsPerBossKill": 150,
+  "coinsPerSecondSurvived": 0.5
 }

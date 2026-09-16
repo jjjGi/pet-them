@@ -295,13 +295,24 @@ namespace PetThem.Game
             {
                 if (!views.TryGetValue(enemy.Id, out GameObject view))
                 {
-                    view = CreateCreature(enemy.Kind.ToString(), enemy.Kind == EnemyKind.Runner ?
-                        new Color32(255, 203, 115,255) : coral, enemy.Kind == EnemyKind.Runner ? .62f : .9f, 5, false);
+                    view = CreateCreature(enemy.Kind.ToString(), EnemyColor(enemy.Kind),
+                        enemy.Radius * 2, enemy.Kind == EnemyKind.Boss ? 7 : 5, enemy.Kind == EnemyKind.Boss);
                     views.Add(enemy.Id, view);
                 }
                 view.transform.position = new Vector3(enemy.Position.x,enemy.Position.y,0);
             }
         }
+        private static Color EnemyColor(EnemyKind kind)
+        {
+            switch (kind)
+            {
+                case EnemyKind.Runner: return new Color32(255, 203, 115, 255);
+                case EnemyKind.Brute: return new Color32(176, 124, 224, 255);
+                case EnemyKind.Boss: return new Color32(255, 92, 140, 255);
+                default: return new Color32(255, 119, 110, 255);
+            }
+        }
+
         private void SynchronizeArrows()
         {
             staleArrows.Clear();
@@ -413,6 +424,17 @@ namespace PetThem.Game
                     Mathf.Clamp01((float)world.Experience / world.ExperienceToNextLevel)),7),mint);
                 GUI.Label(new Rect(width-380,22,240,35),"WAVE " + world.Wave + "   /   " + world.Kills + " KOs",body);
                 if (world.State == RunState.Playing && GUI.Button(new Rect(width-110,15,88,43),paused ? "PLAY" : "II",button)) TogglePause();
+                if (world.Boss != null)
+                {
+                    GUI.Label(new Rect(width/2-220,600,440,30),"BIG ONE  /  " +
+                        Mathf.CeilToInt(world.Boss.Health) + " HP",small);
+                    Panel(new Rect(width/2-220,632,440,14),new Color(.3f,.35f,.38f));
+                    Panel(new Rect(width/2-220,632,440 * world.Boss.Health / world.Boss.MaxHealth,14),
+                        EnemyColor(EnemyKind.Boss));
+                }
+                else if (!world.BossDefeated && world.State == RunState.Playing)
+                    GUI.Label(new Rect(width/2-140,600,300,30),
+                        "BIG ONE IN " + Mathf.CeilToInt(world.SecondsToBoss) + "s",small);
                 GUI.Label(new Rect(28,666,400,30),"MOVE  /  WASD or left thumb",small);
                 GUI.Label(new Rect(width-460,666,440,30),WeaponName(weapon) + "  /  " + WeaponHint(weapon),small);
                 if (weapon == WeaponId.Laser)
@@ -442,14 +464,16 @@ namespace PetThem.Game
                 float left = width/2-340;
                 GUI.Label(new Rect(left,158,700,90),!started ? "PET THEM!" :
                     paused && world.State == RunState.Playing ? "TAKE A BREATHER." :
+                    world.BossDefeated ? "BIG ONE DOWN!" :
                     world.State == RunState.Won ? "NICE PETTING." : "ONE MORE PAT?",title);
                 GUI.Label(new Rect(left,265,680,90),!started ?
-                    "Survive 3 minutes with Mochi.\nEarn XP from KOs. Pick one of 3 upgrades." :
-                    "Time " + FormatTime(world.Time) + "   /   " + world.Kills + " KOs   /   Wave " + world.Wave,heading);
+                    "Survive 3 minutes with Mochi. A big one shows up late.\nEarn XP from KOs. Pick one of 3 upgrades." :
+                    "Time " + FormatTime(world.Time) + "   /   " + world.Kills + " KOs   /   Wave " + world.Wave +
+                    "\n" + world.Coins + " COINS" + (world.BossDefeated ? "   (big one bonus included)" : ""),heading);
                 bool picking = !started || world.State != RunState.Playing;
                 GUI.Label(new Rect(left,370,680,90),!started ?
                     "Move with your left thumb. The right side attacks.\nMochi attacks automatically.\nDesktop: WASD + mouse. SPACE auto-targets." :
-                    "Mint buddy = automatic support. Coral = chaser. Gold = runner.\nMake an escape route; keep moving.",body);
+                    "Mint = Mochi. Coral = chaser. Gold = runner. Purple = brute, slow but heavy.\nPink = the big one. Take it down to end the run early.",body);
                 if (picking) DrawWeaponPicker(left);
                 string label = !started ? "LET'S PLAY  >" : paused && world.State == RunState.Playing ? "KEEP GOING  >" : "TRY AGAIN  >";
                 if (GUI.Button(new Rect(left,560,340,62),label,button))

@@ -22,7 +22,7 @@ namespace PetThem.Combat
     [Serializable]
     public sealed class BalanceConfig
     {
-        public string version = "prototype-0.1";
+        public string version = "prototype-0.3";
         public float duration = 180, arenaHalfWidth = 14, arenaHalfHeight = 8;
         public float playerHealth = 100, playerSpeed = 4.5f;
         public float punchDamage = 26, punchRange = 2.6f, punchCooldown = 0.38f, punchKnockback = 1.5f;
@@ -37,6 +37,13 @@ namespace PetThem.Combat
         // Laser: continuous damage limited by heat rather than by a cooldown.
         public float laserDamagePerSecond = 52, laserRange = 8.5f, laserWidth = 0.75f;
         public float laserHeatPerSecond = 36, laserCoolPerSecond = 28, laserOverheatPenalty = 1.5f;
+        // Brute: slow, heavy, hits hard. Punishes standing still more than the chaser does.
+        public float bruteHealth = 80, bruteSpeed = 0.85f, bruteContactDamage = 18, bruteShare = 0.16f;
+        // Boss: one per run, arrives late. Killing it ends the run early as a win.
+        public float bossSpawnTime = 120, bossHealth = 1800, bossSpeed = 1.05f;
+        public float bossContactDamage = 26, bossRadius = 1.9f;
+        // Run reward. Spent in the shop between runs, which is not built yet.
+        public float coinsPerKill = 1, coinsPerBossKill = 150, coinsPerSecondSurvived = 0.5f;
 
         public BalanceConfig Copy() => (BalanceConfig)MemberwiseClone();
         public void Validate()
@@ -47,9 +54,15 @@ namespace PetThem.Combat
                 spawnInterval, minSpawnInterval, waveDuration,
                 arrowDamage, arrowCooldown, arrowSpeed, arrowRadius,
                 laserDamagePerSecond, laserRange, laserWidth,
-                laserHeatPerSecond, laserCoolPerSecond, laserOverheatPenalty })
+                laserHeatPerSecond, laserCoolPerSecond, laserOverheatPenalty,
+                bruteHealth, bruteSpeed, bruteContactDamage,
+                bossSpawnTime, bossHealth, bossSpeed, bossContactDamage, bossRadius })
                 if (!Vec2.Finite(value) || value <= 0) throw new ArgumentException("Balance values must be finite and positive.");
             if (!Vec2.Finite(punchKnockback) || punchKnockback < 0) throw new ArgumentException("Invalid knockback.");
+            foreach (float reward in new[] { coinsPerKill, coinsPerBossKill, coinsPerSecondSurvived })
+                if (!Vec2.Finite(reward) || reward < 0) throw new ArgumentException("Reward values must be finite and not negative.");
+            if (!Vec2.Finite(bruteShare) || bruteShare < 0 || bruteShare > 0.9f)
+                throw new ArgumentException("bruteShare must be between 0 and 0.9.");
             if (maxEnemies < 1 || maxEnemies > 1000 || minSpawnInterval > spawnInterval ||
                 arenaHalfWidth <= 1 || arenaHalfHeight <= 1 || string.IsNullOrWhiteSpace(version))
                 throw new ArgumentException("Invalid limits or version.");
@@ -71,7 +84,7 @@ namespace PetThem.Combat
     }
 
     public enum RunState { Playing, Won, Lost, Abandoned }
-    public enum EnemyKind { Grunt, Runner }
+    public enum EnemyKind { Grunt, Runner, Brute, Boss }
 
     public sealed class Enemy
     {
@@ -80,6 +93,8 @@ namespace PetThem.Combat
         public Vec2 Position { get; internal set; }
         public float Health { get; internal set; }
         public float MaxHealth { get; internal set; }
+        /// <summary>Body size. A bigger enemy is easier to hit and reaches the player sooner.</summary>
+        public float Radius { get; internal set; } = 0.4f;
     }
 
     [Serializable]
@@ -150,6 +165,7 @@ namespace PetThem.Combat
             Position = Clamp(Position + movement * (config.playerSpeed * StepSeconds), 0.45f);
             if (input.aim.Length > 0.05f) Facing = input.aim.Normalized;
 
+            SpawnBossWhenDue();
             if (Tick >= nextSpawn && enemies.Count < config.maxEnemies)
             {
                 Spawn();
@@ -158,7 +174,8 @@ namespace PetThem.Combat
             }
 
             StepWeapon(input);
-            if (Tick >= nextPet)
+            // Killing the boss ends the run inside the attack above, so nothing after it may act.
+            if (State == RunState.Playing && Tick >= nextPet)
             {
                 Enemy target = Nearest(config.petRange);
                 if (target != null)
@@ -169,17 +186,17 @@ namespace PetThem.Combat
                 }
             }
 
-            for (int i = 0; i < enemies.Count; i++)
+            for (int i = 0; i < enemies.Count && State == RunState.Playing; i++)
             {
                 Enemy enemy = enemies[i];
-                float speed = enemy.Kind == EnemyKind.Runner ? config.runnerSpeed : config.gruntSpeed;
                 Vec2 delta = Position - enemy.Position;
-                float travel = Math.Min(delta.Length, speed * StepSeconds);
+                float travel = Math.Min(delta.Length, SpeedOf(enemy.Kind) * StepSeconds);
                 enemy.Position += delta.Normalized * travel;
-                if ((enemy.Position - Position).Length <= 0.75f && Tick >= nextHurt)
+                // A bigger body reaches the player from further out.
+                if ((enemy.Position - Position).Length <= 0.35f + enemy.Radius && Tick >= nextHurt)
                 {
                     nextHurt = Tick + Frames(config.hurtCooldown);
-                    float actual = Math.Min(Health, config.contactDamage);
+                    float actual = Math.Min(Health, ContactDamageOf(enemy.Kind));
                     Health -= actual;
                     Emit("hurt", enemy.Kind.ToString(), enemy.Id, actual, Position);
                     if (Health <= 0) { State = RunState.Lost; Emit("run_end", "death", enemy.Id, Kills); break; }
@@ -216,10 +233,13 @@ namespace PetThem.Combat
             Vec2 position = Clamp(Position + direction * distance, 0.4f);
             // Avoid spawning on top of the player at an arena edge.
             if ((position - Position).Length < 4) position = Clamp(Position - direction * distance, 0.4f);
-            EnemyKind kind = Next() < 0.28f ? EnemyKind.Runner : EnemyKind.Grunt;
-            float health = kind == EnemyKind.Runner ? config.runnerHealth : config.gruntHealth;
-            health *= 1 + (wave - 1) * 0.12f;
-            var enemy = new Enemy { Id = nextId++, Kind = kind, Health = health, MaxHealth = health, Position = position };
+            float roll = Next();
+            EnemyKind kind = roll < 0.28f ? EnemyKind.Runner
+                : roll < 0.28f + config.bruteShare ? EnemyKind.Brute
+                : EnemyKind.Grunt;
+            float health = HealthOf(kind) * (1 + (wave - 1) * 0.12f);
+            var enemy = new Enemy { Id = nextId++, Kind = kind, Health = health, MaxHealth = health,
+                Position = position, Radius = RadiusOf(kind) };
             enemies.Add(enemy);
             Emit("spawn", kind.ToString(), enemy.Id, health, position);
         }
@@ -242,6 +262,7 @@ namespace PetThem.Combat
             {
                 enemies.Remove(enemy); Kills++; Emit("kill", source, enemy.Id, 1, enemy.Position);
                 AwardExperience();
+                OnEnemyKilled(enemy);
             }
         }
         private void Emit(string type, string source, int targetId, float value, Vec2 position = default)

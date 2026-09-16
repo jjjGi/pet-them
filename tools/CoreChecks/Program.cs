@@ -322,6 +322,127 @@ Check("weapon damage scales with its own upgrade and the run's config is not sha
     Throws(() => new CombatWorld(new BalanceConfig { laserRange = 0 }, 1));
     Throws(() => new CombatWorld(new BalanceConfig { arrowSpeed = float.NaN }, 1));
 });
+Check("the boss arrives once, on time, even when the enemy cap is full", () =>
+{
+    var config = new BalanceConfig { playerHealth = 100000, petRange = .001f, maxEnemies = 1,
+        bossSpawnTime = 2, spawnInterval = .01f, minSpawnInterval = .01f };
+    var world = new CombatWorld(config, 42);
+    for (int i = 0; i < 60; i++) world.Step(default);
+    True(world.Boss == null && world.SecondsToBoss > 0);
+    True(world.Enemies.Count == config.maxEnemies);
+
+    int spawns = 0;
+    for (int i = 0; i < 600; i++)
+    {
+        world.Step(default);
+        spawns += Count(world, "boss_spawn", nameof(EnemyKind.Boss));
+        // The cap applies to ordinary enemies. The boss is never starved out by a crowd.
+        int ordinary = 0;
+        foreach (Enemy e in world.Enemies) if (e.Kind != EnemyKind.Boss) ordinary++;
+        True(ordinary <= config.maxEnemies);
+        if (spawns > 0) True(world.Enemies.Contains(world.Boss));
+    }
+    True(spawns == 1);
+    True(world.Boss != null && !world.BossDefeated);
+    Near(world.SecondsToBoss, 0);
+    Enemy boss = world.Boss!;
+    True(boss.MaxHealth == config.bossHealth);
+    True(boss.Radius == config.bossRadius);
+    True(world.RadiusOf(EnemyKind.Boss) > world.RadiusOf(EnemyKind.Grunt));
+    True(world.HealthOf(EnemyKind.Boss) > world.HealthOf(EnemyKind.Brute));
+});
+Check("killing the boss wins the run at once and nothing acts after it", () =>
+{
+    var config = new BalanceConfig { playerHealth = 100000, petRange = .001f,
+        bossSpawnTime = 1, bossHealth = 50, punchDamage = 10000, punchRange = 30,
+        punchCooldown = .02f, spawnInterval = .01f, minSpawnInterval = .01f };
+    var world = new CombatWorld(config, 42);
+    for (int i = 0; i < 90; i++) world.Step(default);
+    True(world.Boss != null);
+
+    int ends = 0;
+    string reason = "";
+    for (int i = 0; i < 300 && world.State == RunState.Playing; i++)
+    {
+        world.Step(new PlayerInput(default, default, true));
+        foreach (CombatEvent e in world.Events)
+            if (e.type == "run_end") { ends++; reason = e.source; }
+    }
+    True(world.State == RunState.Won);
+    True(world.BossDefeated && world.Boss == null);
+    True(ends == 1 && reason == "boss_down");
+    True(world.Time < config.duration);
+
+    // A finished run stays finished and emits nothing further.
+    world.Step(new PlayerInput(default, default, true));
+    True(world.Events.Count == 0 && world.State == RunState.Won);
+});
+Check("surviving the clock with the boss still up is a survival win, not a boss kill", () =>
+{
+    var world = new CombatWorld(new BalanceConfig { playerHealth = 100000, duration = 3,
+        bossSpawnTime = 1, petRange = .001f }, 42);
+    string reason = "";
+    for (int i = 0; i < 600 && world.State == RunState.Playing; i++)
+    {
+        world.Step(default);
+        foreach (CombatEvent e in world.Events) if (e.type == "run_end") reason = e.source;
+    }
+    True(world.State == RunState.Won);
+    True(reason == "survived");
+    True(!world.BossDefeated && world.Boss != null);
+});
+Check("brutes are slower, tougher and hit harder than chasers", () =>
+{
+    var config = new BalanceConfig();
+    var world = new CombatWorld(config, 42);
+    True(world.SpeedOf(EnemyKind.Brute) < world.SpeedOf(EnemyKind.Grunt));
+    True(world.HealthOf(EnemyKind.Brute) > world.HealthOf(EnemyKind.Grunt));
+    True(world.ContactDamageOf(EnemyKind.Brute) > world.ContactDamageOf(EnemyKind.Grunt));
+    True(world.ContactDamageOf(EnemyKind.Boss) > world.ContactDamageOf(EnemyKind.Brute));
+
+    // With a share configured, brutes actually turn up in a long run.
+    var busy = new CombatWorld(new BalanceConfig { playerHealth = 100000, petRange = .001f,
+        spawnInterval = .05f, minSpawnInterval = .05f, bossSpawnTime = 1000 }, 42);
+    int brutes = 0, runners = 0, grunts = 0;
+    for (int i = 0; i < 3600; i++)
+    {
+        busy.Step(default);
+        brutes += Count(busy, "spawn", nameof(EnemyKind.Brute));
+        runners += Count(busy, "spawn", nameof(EnemyKind.Runner));
+        grunts += Count(busy, "spawn", nameof(EnemyKind.Grunt));
+    }
+    True(brutes > 0 && runners > 0 && grunts > 0);
+    True(grunts > brutes);
+
+    // Setting the share to zero removes them entirely.
+    var none = new CombatWorld(new BalanceConfig { playerHealth = 100000, petRange = .001f,
+        bruteShare = 0, spawnInterval = .05f, minSpawnInterval = .05f, bossSpawnTime = 1000 }, 42);
+    for (int i = 0; i < 3600; i++)
+    { none.Step(default); True(Count(none, "spawn", nameof(EnemyKind.Brute)) == 0); }
+});
+Check("coins come from kills, the boss and time, and reset with the run", () =>
+{
+    var config = new BalanceConfig { playerHealth = 100000, petRange = .001f,
+        duration = 4, bossSpawnTime = 1000, coinsPerKill = 3, coinsPerSecondSurvived = 2,
+        coinsPerBossKill = 500, punchDamage = 10000, punchRange = 30, punchCooldown = .02f,
+        spawnInterval = .05f, minSpawnInterval = .05f };
+    var world = new CombatWorld(config, 42);
+    True(world.Coins == 0);
+    for (int i = 0; i < 600 && world.State == RunState.Playing; i++)
+        world.Step(new PlayerInput(default, default, true));
+    True(world.Kills > 0);
+    True(world.Coins == (int)(world.Kills * 3 + world.Time * 2));
+    True(!world.BossDefeated);
+
+    // A fresh run starts from zero, so coins are per run and not carried in the world.
+    var again = new CombatWorld(config, 42);
+    True(again.Coins == 0 && again.Kills == 0 && !again.BossDefeated);
+
+    Throws(() => new CombatWorld(new BalanceConfig { coinsPerKill = -1 }, 1));
+    Throws(() => new CombatWorld(new BalanceConfig { bossSpawnTime = 0 }, 1));
+    Throws(() => new CombatWorld(new BalanceConfig { bruteShare = -0.1f }, 1));
+    Throws(() => new CombatWorld(new BalanceConfig { bruteShare = 1 }, 1));
+});
 Console.WriteLine(passed + " checks passed.");
 return;
 
