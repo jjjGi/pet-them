@@ -1,156 +1,100 @@
 # 인계 문서
 
-다른 에이전트나 새 대화에서 이 프로젝트를 이어받을 때 읽는 문서입니다.
-마지막 갱신: 2026-09-16.
+마지막 갱신: 2026-09-16. 기준 문서는 [PROJECT.md](../PROJECT.md).
 
-기준 문서는 [PROJECT.md](../PROJECT.md)입니다. 이 문서는 **지금 당장 무엇을 해야 하는지**만 짧게 정리합니다.
+## 현재 사용자가 선택한 작업
 
-## 그대로 붙여 넣을 재개 요청
+**변수별 밸런스 실험보다 Unity 화면·조작 확인을 먼저 진행한다.**
+사용자가 직접 Play 모드로 확인할 순서를 전달했고, 화면·동시 입력·일시정지·재시작에 대한 답변을 기다리는 중이다.
+다음 작업 때 새 답변과 실제 로그를 먼저 확인한다. 기본 밸런스 값은 변경하지 않았다.
 
-~~~text
-D:/Project/PetThemGame 에서 작업해 줘.
+## 저장소와 현재 상태
 
-1. PROJECT.md, AGENTS.md, docs/handoff.md 를 읽고 실제 파일·git 상태와 대조해.
-2. Unity 라이선스는 이미 활성이야 (Unity Personal). 컴파일과 Android APK 빌드도 이미 성공했어.
-   다시 확인하려면 배치 모드로 돌려봐. 파일 경로로 판단하지 마.
-3. 실험실(D:/Project/PetThemBalanceLab)의 MCP 도구 10개는 이미 동작해.
-   analyze_playtests 하나만 미구현이고, 막고 있는 건 코드가 아니라 데이터야.
-   사람의 플레이 기록이 0건이라 읽을 대상이 없어. 새로 만들려 하지 마.
-4. 다음 할 일은 사용자에게 물어봐. 내가 추천하는 순서는:
-   - (a) 한 번에 한 값만 바꾼 밸런스 후보로 나눠서 실험. 기존 후보는 네 값을 동시에 바꿔
-     기여도를 분리할 수 없어. 이건 사람 없이 지금 할 수 있어.
-   - (b) 사용자가 Play 모드로 손맛을 확인한 뒤 난이도 조정. 봇 결과만으로 수치를 바꾸지 마.
-5. 작업 단위마다 해당 저장소의 scripts/check.ps1 을 돌리고,
-   PROJECT.md 현재 상태와 docs/verification.md 를 갱신한 뒤 커밋·푸시해.
-   두 저장소는 각각 커밋해.
-
-알아둘 것: 봇이 한 번도 안 맞는 것과 적이 상한(100)까지 쌓이는 것이 동시에 관찰돼.
-서로 다른 문제니까 "너무 쉽다" 하나로 뭉뚱그리지 마.
-~~~
-
-## 저장소 두 개
-
-| 저장소 | 로컬 | 담는 것 |
+| 저장소 | 로컬 경로 | 역할 |
 | --- | --- | --- |
-| jjjGi/pet-them (비공개) | D:/Project/PetThemGame | Unity 게임, 공통 전투 코어, 밸런스 설정 |
-| jjjGi/pet-them-balance-lab (비공개) | D:/Project/PetThemBalanceLab | MCP 서버, 봇 시뮬레이터, 기록 분석 |
+| jjjGi/pet-them (비공개) | D:/Project/PetThemGame | Unity 게임, 공통 전투 코어, 기본 설정 |
+| jjjGi/pet-them-balance-lab (비공개) | D:/Project/PetThemBalanceLab | MCP 도구 10개, 시뮬레이터, 비교·후보·HTML 보고서 |
 
-최신 커밋은 `git log --oneline -1`로 확인하세요. 이 문서에 적힌 값은 금방 낡습니다.
+MCP는 사용자 지시로 반드시 별도 비공개 저장소에 둔다.
+실험실은 게임의 전투 코어를 PetThemGameRoot로 참조한다. 복사본을 만들지 않는다.
+양쪽을 수정하면 각 저장소 지침을 읽고 각각 검증·커밋·푸시한다.
+최신 커밋은 각 저장소의 git log로 확인한다.
 
-사용자 지시로 **MCP는 반드시 별도 비공개 저장소**에 둡니다. 게임 저장소로 되돌리지 마세요.
+## 해결된 것 — 재설치하지 않는다
 
-실험실은 게임 저장소의 전투 소스를 `PetThemGameRoot`로 직접 컴파일합니다.
-복사본이 없으므로 규칙이 갈라질 수 없습니다. 게임 쪽 전투 규칙을 고치면 **양쪽 검증을 모두** 돌려야 합니다.
+- Unity Personal 활성화 완료.
+- Unity 6000.3.24f1: C:/Program Files/Unity/Hub/Editor/6000.3.24f1/Editor/Unity.exe.
+- Android SDK/NDK/OpenJDK 설치 완료.
+- Unity 배치 임포트·컴파일 성공.
+- Android 개발 APK 빌드 성공: game/Builds/PetThem-development.apk.
+- MCP의 compare_experiments, create_balance_candidate, Create_Balance_Report까지 구현 완료.
+- 실험실 검사 14개 통과 이력. 게임 전투 규칙 검사 12개.
 
-## Unity 상태 (해결됨)
+라이선스 존재를 C:/ProgramData/Unity 경로만으로 판정하지 않는다.
+Hub가 MSIX라 라이선스가 패키지 LocalCache 아래에 있다. 민감한 라이선스 내용은 출력하지 않는다.
+현재 Unity가 열려 있으면 같은 프로젝트로 두 번째 배치 에디터를 띄우거나 기존 창을 임의로 종료하지 않는다.
 
-- 라이선스: **Unity Personal**, 활성. Type `Assigned`, 무기한.
-- 에디터: `C:/Program Files/Unity/Hub/Editor/6000.3.24f1/Editor/Unity.exe`
-- Android SDK/NDK/JDK/Gradle: 에디터 설치본 안에 모두 포함. 별도 설치 불필요.
-- 배치 모드 임포트·컴파일: 성공, 오류 0.
-- Android 개발 APK: 빌드 성공 (19.3 MB, `com.petthem.game` 0.1.0, arm64-v8a, IL2CPP).
+## 새로 확인한 사실
 
-**라이선스 파일은 `C:/ProgramData/Unity`에 없습니다.** Hub가 MSIX라 아래로 가상화됩니다.
+**이전 문서의 '사람 플레이 기록 0건'은 현재 파일 상태와 맞지 않는다.**
+WindowsEditor 클라이언트 기록 2건이 있다. source 라벨은 human이지만 조작자의 신원이나 손맛을 증명하지는 않는다.
 
-~~~text
-%LOCALAPPDATA%/Packages/UnityTechnologies.UnityHub_2vrhnee42bhxm/LocalCache/Local/Unity/licenses/UnityEntitlementLicense.xml
-~~~
+- 29.87초 기록: 펀치 58회, 펫 공격 33회, 처치 20, 피해 0, abandoned.
+- 77.48초 기록: 펀치 144회, 펫 공격 83회, 처치 70, 피해 50, abandoned.
+- 두 기록 모두 이동 좌표 변화와 종료 이벤트, 처치 합계 일치를 확인했다.
+- 종료가 abandoned이므로 둘 다 패배나 3분 생존 성공으로 집계하지 않는다.
+- 기록 저장은 확인했지만 화면·버튼·동시 입력·일시정지 동작은 별도 확인이 필요하다.
+- 상세: [playtest.md](playtest.md). 원본 기록은 로컬에만 남기며 커밋하지 않는다.
 
-경로 존재 여부로 판단하지 말고, 배치 모드로 에디터를 실제 실행해 확인하세요.
-
-## 남은 것 — 사람이 해야 하는 일
-
-빌드가 된다는 것과 재미있다는 것은 다릅니다. 자동 검증으로 대체하지 마세요.
-
-1. **Play 모드 확인** — 화면, 버튼, 이동·공격 동시 입력, 일시정지, 재시작, 기록 저장.
-2. **실기기 확인** — APK를 설치해 두 손 조작, 프레임, 가독성, 손의 피로.
-3. 위 결과를 들은 **뒤에** 전투 난이도를 조정합니다. 봇 결과만 보고 바꾸지 마세요.
-
-## 실험실 상태 (MCP 도구 10개 동작)
-
-`compare_experiments`, `create_balance_candidate`, `Create_Balance_Report`까지 전부 구현하고 검증했습니다.
-검사 14개 통과. 실제로 보고서를 만들어 봤습니다: `reports/balance-01.html`.
-
-한 바퀴 돌려보려면:
+로그 진단:
 
 ~~~powershell
-cd D:\Project\PetThemBalanceLab
-dotnet build src/McpServer -c Release
-./scripts/mcp-call.ps1 run_simulation '{"runs":5,"seed":42,"label":"기준","outputDirectory":"demo"}'
-./scripts/mcp-call.ps1 list_experiments '{"limit":5}'
-./scripts/mcp-call.ps1 Create_Balance_Report '{"baselineExperimentId":"exp-...","outputPath":"r.html"}'
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/inspect-playtest.ps1 -Latest 5
 ~~~
 
-**남은 도구는 `analyze_playtests` 하나**이고, 막고 있는 것은 기술이 아니라 데이터입니다.
-사람의 플레이 기록이 0건이라 구현해도 읽을 대상이 없습니다.
+현재 세션에는 computer-use 스킬은 있지만 필수 node_repl 도구가 노출되지 않았다.
+따라서 에이전트가 화면을 보거나 클릭한 것으로 보고하지 않았다.
+다음 세션에 도구가 있으면 스킬을 읽고 새 창 상태부터 확인한다.
 
-## 사람 없이 진행 가능한 일
+## 다음 작업
 
-1. **한 번에 한 값만 바꾼 후보로 나눠 실험.** 현재 후보 `cand-contact-probe`는 네 값을 동시에 바꿔서
-   어느 변경이 얼마나 기여했는지 분리할 수 없습니다. `punchRange`만, `gruntSpeed`만 식으로 나누세요.
-2. 표본을 20~50회로 늘려 시드 변동 폭 확인. 현재 5회는 방향만 볼 수 있는 수준입니다.
-3. 보고서의 인쇄 레이아웃과 화면 낭독기 동작 확인. 아직 검증 안 했습니다.
-4. 단계 E용 확인 항목: 개발 빌드에 `android.permission.INTERNET`이 들어갑니다(프로파일러용).
-   오프라인 게임이므로 출시 빌드에서 빠지는지 확인해야 합니다.
+1. PROJECT.md, AGENTS.md, 이 문서, 실제 Git 상태를 대조한다.
+2. 사용자의 Play 모드 피드백과 새 로그를 확인한다.
+3. 화면·조작 문제가 보고되면 재현 가능한 범위를 좁혀 수정하고 검증한다.
+4. 로컬 기록은 이미 있으므로 analyze_playtests가 '데이터 0건 때문에 불가능'하다고 반복하지 않는다.
+   분석 구현 여부는 현재 UI 확인 작업이 끝난 뒤 정한다. 두 건의 중도 종료 기록만으로 사람의 밸런스를 확정하지 않는다.
+5. 실제 Android 기기로 동시 이동·공격·가독성·프레임·피로를 확인한다.
+6. 사용자가 원할 때, 기존 cand-contact-probe의 네 변경을 한 값씩 분리해 30개 시드로 비교한다.
+7. 작업 내용을 PROJECT.md, docs/verification.md, 이 문서에 갱신하고 커밋·푸시한다.
 
-## 지금 알고 있는 밸런스 상태
+## 밸런스 해석
 
-두 가지가 **동시에** 관찰됩니다. 서로 다른 문제이고 수정 방향도 다를 수 있습니다.
-
-1. 봇이 한 번도 맞지 않습니다. 제자리에 서 있는 봇조차 그렇습니다.
-2. 살아 있는 적이 첫 30초 평균 4.6에서 마지막 평균 95.2로 쌓입니다. 상한이 100입니다.
-
-1번만 보고 "너무 쉽다"로 결론내지 마세요. 적은 계속 쌓이고 있습니다.
+봇이 피해를 받지 않는 현상과 적이 상한 근처까지 누적되는 현상은 별도로 본다.
+기존 복합 후보가 봇을 모두 사망시켰다는 것만으로 어느 변경이 원인인지 판정하지 않는다.
+같은 시드는 초기 난수 조건을 맞추지만 **정확히 같은 위치·시점의 적 등장**까지 보장하지 않는다.
+등장 위치는 플레이어 위치에, 생성 시점은 적 수 상한에 영향을 받기 때문이다.
+사람의 조작 확인 없이 게임 기본 수치를 봇 결과에 맞춰 조정하지 않는다.
 
 ## 검증 명령
 
 ~~~powershell
-# 게임 저장소 - 전투 규칙 12개
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\Project\PetThemGame\scripts\check.ps1
-
-# 실험실 저장소 - 9개 (MCP 실제 통신 검사 포함)
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\Project\PetThemBalanceLab\scripts\check.ps1
+# 게임
+powershell -NoProfile -ExecutionPolicy Bypass -File D:/Project/PetThemGame/scripts/check.ps1
+# 실험실 — 실제로 실험실을 수정했거나 공통 규칙을 바꿨을 때
+powershell -NoProfile -ExecutionPolicy Bypass -File D:/Project/PetThemBalanceLab/scripts/check.ps1
 ~~~
 
-Unity 컴파일 확인 (로그 파일을 지정하고 `error CS`를 세는 편이 확실합니다):
+Unity 배치 실행은 해당 프로젝트가 다른 에디터에 열려 있지 않을 때 수행한다.
+Start-Process -Wait 또는 프로세스 종료 확인 뒤 로그의 성공·실패를 판정한다.
+Editor 로그 기본 위치: %LOCALAPPDATA%/Unity/Editor/Editor.log.
+프로세스 전체 명령행에는 인증 값이 포함될 수 있으므로 출력하지 않는다.
 
-~~~powershell
-$log = "$env:TEMP\unity-import.log"
-& "C:/Program Files/Unity/Hub/Editor/6000.3.24f1/Editor/Unity.exe" `
-  -batchmode -quit -projectPath D:/Project/PetThemGame/game -logFile $log
-~~~
+## 알려진 함정
 
-Android 개발 APK 빌드:
-
-~~~powershell
-& "C:/Program Files/Unity/Hub/Editor/6000.3.24f1/Editor/Unity.exe" `
-  -batchmode -quit -projectPath D:/Project/PetThemGame/game -buildTarget Android `
-  -executeMethod PetThem.Editor.PrototypeSetup.BuildAndroid -logFile $log
-~~~
-
-결과물은 `game/Builds/PetThem-development.apk` (Git 제외).
-
-## 넘겨받는 사람이 알아야 할 함정
-
-- **MCP stdio: 요청을 쓰자마자 stdin을 닫으면 안 됩니다.** 서버가 응답을 쓰기 전에 전송 계층이 종료되어
-  stdout이 빈 채로 끝납니다. 응답을 다 받은 뒤 닫아야 합니다. `tools/LabChecks/Program.cs`의 `Handshake`가 예시입니다.
-- MCP 서버는 stdout에 프로토콜 메시지만 씁니다. 로그는 전부 stderr입니다. `Console.WriteLine`을 추가하지 마세요.
-- `WithTools<T>()`는 static 클래스를 받지 못합니다. 도구 클래스는 `sealed class`여야 합니다.
-- PowerShell에서 `Select-Object -First N`으로 `dotnet run` 출력을 자르면 파이프가 끊겨 종료 코드 255가 납니다.
-  실패가 아닙니다.
-- Unity Hub는 MSIX라 `C:/Program Files/WindowsApps`에 설치됩니다. 일반 Program Files 경로만 보면 못 찾습니다.
-  라이선스 파일도 같은 이유로 `C:/ProgramData/Unity`가 아니라 패키지 LocalCache에 들어갑니다.
-- **Unity.exe를 배치 모드로 띄우면 셸 래퍼가 먼저 반환됩니다.** 종료 코드가 비어 있고 로그도 짧게 보입니다.
-  프로세스가 아직 살아 있는 것이니 `Unity.exe`가 사라질 때까지 기다린 뒤 로그를 읽으세요.
-- Unity 로그의 `Licensing Client signature ... Code 10`과 `LicensingClient has failed validation; ignoring`은
-  MSIX 서명 검증 경고입니다. 바로 뒤에 `Successfully resolved entitlement details`가 나오면 정상입니다.
-- 실험실의 출력 경로는 `experiments/` 밖이면 거부됩니다. 의도된 동작입니다.
-
-## 측정된 사실 (해석 주의)
-
-현재 설정 `prototype-0.1`에서 봇 세 정책 모두 180초를 **피해 0으로** 승리합니다.
-제자리에 서서 펀치만 반복하는 봇조차 한 번도 맞지 않습니다.
-
-이것은 관찰된 결과입니다. **난이도가 쉽다는 결론이나 수치 변경의 근거로 바로 쓰지 마세요.**
-봇은 사람의 반응 속도·조준·피로를 흉내 내지 않습니다.
-사람이 직접 만져 본 뒤에 적 속도·등장 위치·웨이브 구성을 검토합니다.
+- MCP stdio는 응답을 다 받을 때까지 stdin을 열어 둔다.
+- 서버 stdout은 프로토콜 메시지 전용, 로그는 stderr.
+- WithTools<T>()에는 static 클래스가 아닌 sealed class를 사용한다.
+- dotnet 출력을 Select-Object -First로 끊으면 파이프 종료 코드가 생길 수 있다.
+- Unity 서명 검증 경고만으로 라이선스 실패를 단정하지 않는다.
+- 원본 로그·생성 실험·보고서는 Git 제외. 공유할 수치 요약만 문서에 기록한다.
+- 개발 APK의 INTERNET 권한은 출시 빌드에서 실제 필요 여부를 다시 확인한다.

@@ -12,8 +12,9 @@
 - 외부 JSON 밸런스 설정과 JSONL 실행 기록.
 - 전투 코어를 UnityEngine 없이 실행하는 핵심 규칙 검증 도구 (tools/CoreChecks).
 
-**Unity 에디터 실행·Android 실기기 검증은 아직 완료하지 않았습니다.**
-화살·레이저·레벨업 선택·상점·MCP·HTML 보고서는 후속 단계입니다.
+**Unity 컴파일·Android APK 빌드는 성공했습니다. 화면·동시 조작·실기기 손맛 확인은 진행 중입니다.**
+화살·레이저·레벨업 선택·상점은 후속 단계입니다. MCP 도구 10개와 기본 HTML 보고서는 별도 실험실 저장소에 구현되어 있습니다.
+Play 모드 확인 순서와 기록 진단은 [docs/playtest.md](docs/playtest.md)를 참고하세요.
 
 ## Unity 실행
 
