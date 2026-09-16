@@ -3,7 +3,13 @@ using System.Collections.Generic;
 
 namespace PetThem.Combat
 {
-    public enum UpgradeId { PunchPower, PunchReach, PetPower, PetHaste, MoveSpeed, Vitality, Heal }
+    public enum UpgradeId
+    {
+        PunchPower, PunchReach,
+        ArrowPower, ArrowPierce,
+        LaserPower, LaserCooling,
+        PetPower, PetHaste, MoveSpeed, Vitality, Heal,
+    }
 
     public sealed class UpgradeChoice
     {
@@ -32,6 +38,26 @@ namespace PetThem.Combat
         public float PunchRange => config.punchRange;
         public int UpgradeRank(UpgradeId id) => upgradeRanks.TryGetValue(id, out int rank) ? rank : 0;
 
+        /// <summary>Weapon upgrades belong to the weapon this run started with; the rest are shared.</summary>
+        public bool AppliesToWeapon(UpgradeId id)
+        {
+            switch (id)
+            {
+                case UpgradeId.PunchPower:
+                case UpgradeId.PunchReach: return Weapon == WeaponId.Punch;
+                case UpgradeId.ArrowPower:
+                case UpgradeId.ArrowPierce: return Weapon == WeaponId.Arrow;
+                case UpgradeId.LaserPower:
+                case UpgradeId.LaserCooling: return Weapon == WeaponId.Laser;
+                default: return true;
+            }
+        }
+
+        /// <summary>Upgrades that would break the feel of the run if stacked without limit.</summary>
+        public static bool IsRankCapped(UpgradeId id) =>
+            id == UpgradeId.PunchReach || id == UpgradeId.ArrowPierce || id == UpgradeId.LaserCooling ||
+            id == UpgradeId.PetHaste || id == UpgradeId.MoveSpeed;
+
         private void AwardExperience()
         {
             if (!ProgressionEnabled || Level >= MaxLevel) return;
@@ -46,12 +72,16 @@ namespace PetThem.Combat
             var pool = new List<UpgradeId>();
             foreach (UpgradeId id in Enum.GetValues(typeof(UpgradeId)))
             {
-                if ((id == UpgradeId.PunchReach || id == UpgradeId.PetHaste || id == UpgradeId.MoveSpeed) && UpgradeRank(id) >= 5) continue;
+                // Only the weapon this run started with can be upgraded.
+                if (!AppliesToWeapon(id)) continue;
+                if (IsRankCapped(id) && UpgradeRank(id) >= 5) continue;
                 if (id == UpgradeId.Heal && Health >= MaxHealth) continue;
                 pool.Add(id);
             }
             for (int i = 0; i < 3; i++)
             {
+                // The pool is built to hold at least three, but never divide by zero if that changes.
+                if (pool.Count == 0) break;
                 // A separate stream keeps upgrade rolls from changing enemy spawn randomness.
                 progressionRandom ^= progressionRandom << 13;
                 progressionRandom ^= progressionRandom >> 17;
@@ -75,6 +105,14 @@ namespace PetThem.Combat
             {
                 case UpgradeId.PunchPower: config.punchDamage += baseConfig.punchDamage * .2f; break;
                 case UpgradeId.PunchReach: config.punchRange += baseConfig.punchRange * .1f; break;
+                case UpgradeId.ArrowPower: config.arrowDamage += baseConfig.arrowDamage * .22f; break;
+                case UpgradeId.ArrowPierce: config.arrowPierce += 1; break;
+                case UpgradeId.LaserPower:
+                    config.laserDamagePerSecond += baseConfig.laserDamagePerSecond * .18f; break;
+                case UpgradeId.LaserCooling:
+                    config.laserHeatPerSecond = baseConfig.laserHeatPerSecond * (1 - .1f * UpgradeRank(id));
+                    config.laserCoolPerSecond += baseConfig.laserCoolPerSecond * .12f;
+                    break;
                 case UpgradeId.PetPower: config.petDamage += baseConfig.petDamage * .25f; break;
                 case UpgradeId.PetHaste: config.petCooldown = baseConfig.petCooldown * (1 - .1f * UpgradeRank(id)); break;
                 case UpgradeId.MoveSpeed: config.playerSpeed += baseConfig.playerSpeed * .08f; break;
@@ -98,6 +136,10 @@ namespace PetThem.Combat
             {
                 case UpgradeId.PunchPower: title = "HEAVY HANDS"; description = "Punch damage +20% of starting power."; break;
                 case UpgradeId.PunchReach: title = "BIG HIGH FIVE"; description = "Punch reach +10% of starting range.\nUp to 5 ranks."; break;
+                case UpgradeId.ArrowPower: title = "SHARP TIP"; description = "Arrow damage +22% of starting power."; break;
+                case UpgradeId.ArrowPierce: title = "THROUGH AND THROUGH"; description = "Each arrow pierces one more enemy.\nUp to 5 ranks."; break;
+                case UpgradeId.LaserPower: title = "HOT BEAM"; description = "Laser damage +18% of starting power per second."; break;
+                case UpgradeId.LaserCooling: title = "COOL HEAD"; description = "Laser heats 10% slower and cools faster.\nUp to 5 ranks."; break;
                 case UpgradeId.PetPower: title = "MOCHI MUSCLE"; description = "Mochi damage +25% of starting power."; break;
                 case UpgradeId.PetHaste: title = "EAGER BUDDY"; description = "Mochi attack interval -10% of starting interval.\nUp to 5 ranks."; break;
                 case UpgradeId.MoveSpeed: title = "QUICK PAWS"; description = "Move speed +8% of starting speed.\nUp to 5 ranks."; break;

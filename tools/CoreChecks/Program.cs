@@ -199,8 +199,148 @@ Check("multi-kill XP overflow is kept for successive upgrade choices", () =>
     world.ChooseUpgrade(world.UpgradeChoices[0].Id);
     True(world.Experience == earned - 13 && world.Level == 3);
 });
+Check("the arrow flies, pierces a limited number of enemies, and respects its cooldown", () =>
+{
+    var config = new BalanceConfig { playerHealth = 100000, petRange = .001f, arrowPierce = 2,
+        arrowDamage = 1000, spawnInterval = .01f, minSpawnInterval = .01f };
+    var world = new CombatWorld(config, 42, false, WeaponId.Arrow);
+    for (int i = 0; i < 600; i++) world.Step(default);
+    True(world.Enemies.Count > 4);
+
+    world.Step(new PlayerInput(default, default, true));
+    True(Count(world, "attack", "arrow") == 1);
+    True(world.WeaponBusy);
+    // A dense crowd means the arrow can already have struck on the step it was fired.
+    int damaged = Count(world, "damage", "arrow");
+
+    // The cooldown holds even when the fire button is held down every step.
+    for (int i = 0; i < 40; i++)
+    {
+        world.Step(new PlayerInput(default, default, true));
+        True(Count(world, "attack", "arrow") == 0);
+        damaged += Count(world, "damage", "arrow");
+    }
+    // One arrow, so it may damage at most arrowPierce enemies before it is spent.
+    True(damaged >= 1 && damaged <= config.arrowPierce);
+    True(world.Projectiles.Count == 0);
+});
+Check("an arrow fires once on release and damages each enemy only once", () =>
+{
+    // Few enemies and a very slow arrow, so it sits inside one enemy for many steps.
+    var config = new BalanceConfig { playerHealth = 100000, petRange = .001f, arrowPierce = 20,
+        arrowDamage = 1, arrowSpeed = .5f, arrowCooldown = 60,
+        spawnInterval = 2, minSpawnInterval = 2 };
+    var world = new CombatWorld(config, 7, false, WeaponId.Arrow);
+    for (int i = 0; i < 600; i++) world.Step(default);
+
+    // Holding only aims. The shot leaves on release.
+    world.Step(new PlayerInput(default, default, false, true));
+    True(Count(world, "attack", "arrow") == 0);
+    world.Step(new PlayerInput(default, default, false, false));
+    True(Count(world, "attack", "arrow") == 1);
+    True(world.Projectiles.Count == 1);
+
+    var hits = new Dictionary<int, int>();
+    for (int i = 0; i < 900 && world.Projectiles.Count > 0; i++)
+    {
+        world.Step(default);
+        foreach (CombatEvent e in world.Events)
+            if (e.type == "damage" && e.source == "arrow")
+                hits[e.targetId] = hits.TryGetValue(e.targetId, out int n) ? n + 1 : 1;
+    }
+    True(hits.Count >= 1);
+    foreach (int count in hits.Values) True(count == 1);
+});
+Check("the laser burns only what is in front of it and locks out when it overheats", () =>
+{
+    var config = new BalanceConfig { playerHealth = 100000, petRange = .001f,
+        laserDamagePerSecond = 600, laserRange = 6, laserWidth = .6f,
+        laserHeatPerSecond = 50, laserCoolPerSecond = 50,
+        spawnInterval = .01f, minSpawnInterval = .01f };
+    var world = new CombatWorld(config, 11, false, WeaponId.Laser);
+    for (int i = 0; i < 900; i++) world.Step(default);
+    True(!world.Overheated && world.Heat == 0);
+
+    var beam = new Vec2(1, 0);
+    int steps = 0;
+    while (!world.Overheated && steps++ < 600) world.Step(new PlayerInput(default, beam, false, true));
+    True(world.Overheated);
+    Near(world.Heat, 100);
+
+    // Everything the beam damaged was ahead of the player, never behind.
+    var world2 = new CombatWorld(config, 11, false, WeaponId.Laser);
+    for (int i = 0; i < 900; i++) world2.Step(default);
+    for (int i = 0; i < 60; i++)
+    {
+        world2.Step(new PlayerInput(default, beam, false, true));
+        foreach (CombatEvent e in world2.Events)
+            if (e.type == "damage" && e.source == "laser")
+                True(e.x >= world2.Position.x - .001f && (e.x - world2.Position.x) <= config.laserRange + 1);
+    }
+
+    // While overheated the beam does nothing, however hard the button is held.
+    int killsAtOverheat = world.Kills;
+    for (int i = 0; i < 30; i++) world.Step(new PlayerInput(default, beam, false, true));
+    True(world.Kills == killsAtOverheat && world.LaserActive == false);
+
+    // It only returns once the heat is fully gone, not the moment the button is let go.
+    for (int i = 0; i < 600 && world.Overheated; i++) world.Step(default);
+    True(!world.Overheated && world.Heat <= 0);
+    world.Step(new PlayerInput(default, beam, false, true));
+    True(world.LaserActive);
+});
+Check("upgrades offered match the weapon the run started with", () =>
+{
+    foreach (WeaponId weapon in new[] { WeaponId.Punch, WeaponId.Arrow, WeaponId.Laser })
+    {
+        var world = new CombatWorld(new BalanceConfig { playerHealth = 100000, petDamage = 1000,
+            petRange = 100, petCooldown = .01f, spawnInterval = .01f, minSpawnInterval = .01f },
+            42, true, weapon);
+        True(world.Weapon == weapon);
+        for (int level = 0; level < 6; level++)
+        {
+            UntilChoice(world);
+            True(world.UpgradeChoices.Count == 3);
+            foreach (UpgradeChoice choice in world.UpgradeChoices)
+            {
+                True(world.AppliesToWeapon(choice.Id));
+                True(!OtherWeaponUpgrade(choice.Id, weapon));
+            }
+            world.ChooseUpgrade(world.UpgradeChoices[0].Id);
+        }
+    }
+});
+Check("weapon damage scales with its own upgrade and the run's config is not shared", () =>
+{
+    var config = new BalanceConfig();
+    var arrow = new CombatWorld(config, 42, true, WeaponId.Arrow);
+    var laser = new CombatWorld(config, 42, true, WeaponId.Laser);
+    Near(arrow.GetConfig().arrowDamage, config.arrowDamage);
+    Near(laser.GetConfig().laserDamagePerSecond, config.laserDamagePerSecond);
+
+    Throws(() => new CombatWorld(new BalanceConfig { arrowPierce = 0 }, 1));
+    Throws(() => new CombatWorld(new BalanceConfig { laserRange = 0 }, 1));
+    Throws(() => new CombatWorld(new BalanceConfig { arrowSpeed = float.NaN }, 1));
+});
 Console.WriteLine(passed + " checks passed.");
 return;
+
+int Count(CombatWorld world, string type, string source)
+{
+    int total = 0;
+    foreach (CombatEvent e in world.Events) if (e.type == type && e.source == source) total++;
+    return total;
+}
+
+bool OtherWeaponUpgrade(UpgradeId id, WeaponId weapon)
+{
+    bool punch = id == UpgradeId.PunchPower || id == UpgradeId.PunchReach;
+    bool arrow = id == UpgradeId.ArrowPower || id == UpgradeId.ArrowPierce;
+    bool laser = id == UpgradeId.LaserPower || id == UpgradeId.LaserCooling;
+    return (punch && weapon != WeaponId.Punch)
+        || (arrow && weapon != WeaponId.Arrow)
+        || (laser && weapon != WeaponId.Laser);
+}
 
 CombatWorld Safe() => new CombatWorld(new BalanceConfig { playerHealth = 100000 },42);
 CombatWorld ProgressionWorld() => new CombatWorld(new BalanceConfig { playerHealth = 100000,

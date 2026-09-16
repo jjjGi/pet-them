@@ -21,5 +21,16 @@
   "spawnInterval": 1.3,
   "minSpawnInterval": 0.35,
   "waveDuration": 30,
-  "maxEnemies": 100
+  "maxEnemies": 100,
+  "arrowDamage": 40,
+  "arrowCooldown": 0.72,
+  "arrowSpeed": 17,
+  "arrowRadius": 0.45,
+  "arrowPierce": 2,
+  "laserDamagePerSecond": 52,
+  "laserRange": 8.5,
+  "laserWidth": 0.75,
+  "laserHeatPerSecond": 36,
+  "laserCoolPerSecond": 28,
+  "laserOverheatPenalty": 1.5
 }

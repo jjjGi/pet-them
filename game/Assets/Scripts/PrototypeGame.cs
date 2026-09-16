@@ -21,8 +21,12 @@ namespace PetThem.Game
         private Camera gameCamera;
         private Sprite circle, square;
         private Transform player, pet;
+        private readonly Dictionary<int, GameObject> arrowViews = new Dictionary<int, GameObject>();
+        private readonly List<int> staleArrows = new List<int>();
+        private GameObject beam;
+        private WeaponId weapon = WeaponId.Punch;
         private Vec2 move, aim, queuedAim;
-        private bool queuedPunch, paused, started;
+        private bool queuedPunch, holdAttack, paused, started;
         private int moveFinger = -1, attackFinger = -1;
         private Vector2 moveAnchor, attackAnchor, movePoint;
         private float accumulator, hurtFlash;
@@ -58,7 +62,9 @@ namespace PetThem.Game
             CreateArena();
             player = CreateCreature("You", paper, 0.9f, 10, true).transform;
             pet = CreateCreature("Mochi", mint, 0.55f, 11, true).transform;
-            world = new CombatWorld(config, 42, enableProgression: true);
+            beam = RectSprite("Laser beam", Vector2.zero, Vector2.one, coral, 9);
+            beam.SetActive(false);
+            world = new CombatWorld(config, 42, true, weapon);
         }
 
         private void StartRun()
@@ -66,9 +72,12 @@ namespace PetThem.Game
             EndRecording(true);
             foreach (var view in views.Values) Destroy(view);
             views.Clear();
+            foreach (var view in arrowViews.Values) Destroy(view);
+            arrowViews.Clear();
             foreach (var view in transient) Destroy(view);
             transient.Clear(); transientEnds.Clear();
-            world = new CombatWorld(config, unchecked(Environment.TickCount), enableProgression: true);
+            beam.SetActive(false);
+            world = new CombatWorld(config, unchecked(Environment.TickCount), true, weapon);
             started = true; paused = false; accumulator = 0; hurtFlash = 0;
             ClearInput();
             recordingError = "";
@@ -93,7 +102,7 @@ namespace PetThem.Game
                 accumulator += Mathf.Min(Time.unscaledDeltaTime, 0.1f);
                 while (accumulator >= CombatWorld.StepSeconds)
                 {
-                    world.Step(new PlayerInput(move, queuedPunch ? queuedAim : aim, queuedPunch));
+                    world.Step(new PlayerInput(move, queuedPunch ? queuedAim : aim, queuedPunch, holdAttack));
                     queuedPunch = false;
                     RecordEvents();
                     foreach (CombatEvent e in world.Events) ShowEvent(e);
@@ -107,6 +116,8 @@ namespace PetThem.Game
             pet.position = player.position + new Vector3(Mathf.Cos(orbit) * 1.1f, Mathf.Sin(orbit) * 0.75f, 0);
             player.GetComponent<SpriteRenderer>().color = Time.unscaledTime < hurtFlash ? coral : paper;
             SynchronizeEnemies();
+            SynchronizeArrows();
+            DrawBeam();
             for (int i = transient.Count - 1; i >= 0; i--)
                 if (Time.unscaledTime >= transientEnds[i])
                 { Destroy(transient[i]); transient.RemoveAt(i); transientEnds.RemoveAt(i); }
@@ -143,11 +154,17 @@ namespace PetThem.Game
                         attackSeen = true;
                         Vector2 delta = p - attackAnchor;
                         aim = delta.magnitude > radius * .15f ? new Vec2(delta.x, delta.y).Normalized : new Vec2();
-                        if (ended) { queuedPunch = touch.phase == TouchPhase.Ended; queuedAim = aim; attackFinger = -1; }
+                        holdAttack = !ended;
+                        if (ended)
+                        {
+                            // The arrow leaves on release, so queueing a shot here would fire it twice.
+                            queuedPunch = touch.phase == TouchPhase.Ended && weapon == WeaponId.Punch;
+                            queuedAim = aim; attackFinger = -1;
+                        }
                     }
                 }
                 if (!moveSeen) moveFinger = -1;
-                if (!attackSeen) attackFinger = -1;
+                if (!attackSeen) { attackFinger = -1; holdAttack = false; }
                 return;
             }
             moveFinger = attackFinger = -1;
@@ -156,19 +173,27 @@ namespace PetThem.Game
             float y = (Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.UpArrow) ? 1 : 0) -
                 (Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.DownArrow) ? 1 : 0);
             move = new Vec2(x, y);
+            holdAttack = false;
             if (Input.mousePosition.y < Screen.height * .84f)
             {
                 Vector3 point = gameCamera.ScreenToWorldPoint(Input.mousePosition);
                 aim = new Vec2(point.x - world.Position.x, point.y - world.Position.y);
-                if (Input.GetMouseButtonDown(0)) { queuedPunch = true; queuedAim = aim; }
+                holdAttack = Input.GetMouseButton(0);
+                // The punch fires on press. The arrow fires when the button comes back up, so that
+                // dragging to aim first is possible; the laser burns for as long as it is held.
+                if (Input.GetMouseButtonDown(0) && weapon == WeaponId.Punch) { queuedPunch = true; queuedAim = aim; }
             }
-            if (Input.GetKeyDown(KeyCode.Space)) { aim = new Vec2(); queuedAim = aim; queuedPunch = true; }
+            if (Input.GetKey(KeyCode.Space)) holdAttack = true;
+            if (Input.GetKeyDown(KeyCode.Space) && weapon != WeaponId.Laser)
+            { aim = new Vec2(); queuedAim = aim; queuedPunch = weapon == WeaponId.Punch; }
         }
 
         private void ClearInput()
         {
             moveFinger = attackFinger = -1;
-            move = aim = queuedAim = new Vec2(); queuedPunch = false; accumulator = 0;
+            move = aim = queuedAim = new Vec2(); queuedPunch = holdAttack = false; accumulator = 0;
+            world?.CancelHeldAttack();
+            if (beam != null) beam.SetActive(false);
         }
         private void SelectUpgrade(int index)
         {
@@ -277,10 +302,50 @@ namespace PetThem.Game
                 view.transform.position = new Vector3(enemy.Position.x,enemy.Position.y,0);
             }
         }
+        private void SynchronizeArrows()
+        {
+            staleArrows.Clear();
+            foreach (int id in arrowViews.Keys)
+            {
+                bool found = false;
+                foreach (Projectile arrow in world.Projectiles) if (arrow.Id == id) { found = true; break; }
+                if (!found) staleArrows.Add(id);
+            }
+            foreach (int id in staleArrows) { Destroy(arrowViews[id]); arrowViews.Remove(id); }
+            foreach (Projectile arrow in world.Projectiles)
+            {
+                if (!arrowViews.TryGetValue(arrow.Id, out GameObject view))
+                {
+                    view = RectSprite("Arrow", Vector2.zero, new Vector2(.9f, .16f), paper, 9);
+                    arrowViews.Add(arrow.Id, view);
+                }
+                view.transform.position = new Vector3(arrow.Position.x, arrow.Position.y, 0);
+                view.transform.rotation = Quaternion.Euler(0, 0,
+                    Mathf.Atan2(arrow.Velocity.y, arrow.Velocity.x) * Mathf.Rad2Deg);
+            }
+        }
+
+        private void DrawBeam()
+        {
+            bool visible = started && !paused && world.LaserActive;
+            beam.SetActive(visible);
+            if (!visible) return;
+            var from = new Vector2(world.Position.x, world.Position.y);
+            var to = new Vector2(world.LaserEnd.x, world.LaserEnd.y);
+            Vector2 delta = to - from;
+            beam.transform.position = new Vector3((from.x + to.x) / 2, (from.y + to.y) / 2, 0);
+            beam.transform.localScale = new Vector3(delta.magnitude, config.laserWidth, 1);
+            beam.transform.rotation = Quaternion.Euler(0, 0, Mathf.Atan2(delta.y, delta.x) * Mathf.Rad2Deg);
+            beam.GetComponent<SpriteRenderer>().color =
+                new Color(1, .55f, .35f, Mathf.Lerp(.55f, .95f, world.Heat / 100f));
+        }
+
         private void ShowEvent(CombatEvent e)
         {
             if (e.type == "hurt") hurtFlash = Time.unscaledTime + .15f;
             if (e.type != "attack") return;
+            // The arrow and the beam are drawn from world state every frame, not as a one-off flash.
+            if (e.source == "arrow" || e.source == "laser") return;
             GameObject fx;
             if (e.source == "punch")
             {
@@ -349,7 +414,14 @@ namespace PetThem.Game
                 GUI.Label(new Rect(width-380,22,240,35),"WAVE " + world.Wave + "   /   " + world.Kills + " KOs",body);
                 if (world.State == RunState.Playing && GUI.Button(new Rect(width-110,15,88,43),paused ? "PLAY" : "II",button)) TogglePause();
                 GUI.Label(new Rect(28,666,400,30),"MOVE  /  WASD or left thumb",small);
-                GUI.Label(new Rect(width-410,666,390,30),"PUNCH  /  tap + aim or SPACE",small);
+                GUI.Label(new Rect(width-460,666,440,30),WeaponName(weapon) + "  /  " + WeaponHint(weapon),small);
+                if (weapon == WeaponId.Laser)
+                {
+                    GUI.Label(new Rect(width-460,188,250,30),world.Overheated ? "OVERHEATED" : "HEAT",small);
+                    Panel(new Rect(width-460,222,220,9),new Color(.3f,.35f,.38f));
+                    Panel(new Rect(width-460,222,220 * world.Heat / 100f,9),
+                        world.Overheated ? coral : new Color(1,.68f,.36f));
+                }
                 if (moveFinger >= 0)
                 {
                     Vector2 anchor = new Vector2(moveAnchor.x / scale,(Screen.height-moveAnchor.y)/scale);
@@ -374,18 +446,47 @@ namespace PetThem.Game
                 GUI.Label(new Rect(left,265,680,90),!started ?
                     "Survive 3 minutes with Mochi.\nEarn XP from KOs. Pick one of 3 upgrades." :
                     "Time " + FormatTime(world.Time) + "   /   " + world.Kills + " KOs   /   Wave " + world.Wave,heading);
+                bool picking = !started || world.State != RunState.Playing;
                 GUI.Label(new Rect(left,370,680,90),!started ?
-                    "Move with your left thumb. Tap the right side to punch.\nDrag before releasing to aim. Mochi attacks automatically.\nDesktop: WASD + mouse click. SPACE auto-targets." :
-                    "Mint buddy = automatic support. Coral = chaser. Gold = runner.\nPunch to make an escape route; keep moving.",body);
+                    "Move with your left thumb. The right side attacks.\nMochi attacks automatically.\nDesktop: WASD + mouse. SPACE auto-targets." :
+                    "Mint buddy = automatic support. Coral = chaser. Gold = runner.\nMake an escape route; keep moving.",body);
+                if (picking) DrawWeaponPicker(left);
                 string label = !started ? "LET'S PLAY  >" : paused && world.State == RunState.Playing ? "KEEP GOING  >" : "TRY AGAIN  >";
-                if (GUI.Button(new Rect(left,490,340,62),label,button))
+                if (GUI.Button(new Rect(left,560,340,62),label,button))
                 { if (started && paused && world.State == RunState.Playing) TogglePause(); else StartRun(); }
                 if (started && paused && world.State == RunState.Playing &&
-                    GUI.Button(new Rect(left+360,490,220,62),"RESTART",button)) StartRun();
-                GUI.Label(new Rect(left,575,680,70),recordingError.Length > 0 ? recordingError :
-                    started ? "Run log: " + recordingPath : "PROTOTYPE 0.2  /  SURVIVAL + UPGRADES",small);
+                    GUI.Button(new Rect(left+360,560,220,62),"RESTART",button)) StartRun();
+                GUI.Label(new Rect(left,638,680,70),recordingError.Length > 0 ? recordingError :
+                    started ? "Run log: " + recordingPath : "PROTOTYPE 0.3  /  SURVIVAL + UPGRADES + WEAPONS",small);
             }
         }
+        /// <summary>
+        /// The weapon is chosen before the run and cannot change during it, so the upgrades that
+        /// appear later all belong to the same weapon.
+        /// </summary>
+        private void DrawWeaponPicker(float left)
+        {
+            GUI.Label(new Rect(left,470,680,30),"MAIN WEAPON  /  pick one for the whole run",small);
+            var options = new[] { WeaponId.Punch, WeaponId.Arrow, WeaponId.Laser };
+            for (int i = 0; i < options.Length; i++)
+            {
+                bool chosen = weapon == options[i];
+                Color previous = GUI.color;
+                GUI.color = chosen ? mint : new Color(1,1,1,.55f);
+                if (GUI.Button(new Rect(left + i * 190,502,178,46),
+                    (chosen ? "> " : "") + WeaponName(options[i]),button)) weapon = options[i];
+                GUI.color = previous;
+            }
+        }
+
+        private static string WeaponName(WeaponId id) =>
+            id == WeaponId.Arrow ? "ARROW" : id == WeaponId.Laser ? "LASER" : "PUNCH";
+
+        private static string WeaponHint(WeaponId id) =>
+            id == WeaponId.Arrow ? "drag to aim, release to loose" :
+            id == WeaponId.Laser ? "hold to burn, watch the heat" :
+            "tap to swing, drag to aim";
+
         private void DrawUpgradeChoices(float width)
         {
             Panel(new Rect(0,76,width,644),new Color(ink.r,ink.g,ink.b,.97f));

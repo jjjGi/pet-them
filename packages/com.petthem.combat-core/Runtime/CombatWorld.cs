@@ -31,6 +31,12 @@ namespace PetThem.Combat
         public float contactDamage = 10, hurtCooldown = 0.65f;
         public float spawnInterval = 1.3f, minSpawnInterval = 0.35f, waveDuration = 30;
         public int maxEnemies = 100;
+        // Arrow: slow, aimed, pierces a line of enemies. Rewards picking the right target.
+        public float arrowDamage = 40, arrowCooldown = 0.72f, arrowSpeed = 17, arrowRadius = 0.45f;
+        public int arrowPierce = 2;
+        // Laser: continuous damage limited by heat rather than by a cooldown.
+        public float laserDamagePerSecond = 52, laserRange = 8.5f, laserWidth = 0.75f;
+        public float laserHeatPerSecond = 36, laserCoolPerSecond = 28, laserOverheatPenalty = 1.5f;
 
         public BalanceConfig Copy() => (BalanceConfig)MemberwiseClone();
         public void Validate()
@@ -38,21 +44,30 @@ namespace PetThem.Combat
             foreach (float value in new[] { duration, arenaHalfWidth, arenaHalfHeight, playerHealth,
                 playerSpeed, punchDamage, punchRange, punchCooldown, petDamage, petRange, petCooldown,
                 gruntHealth, gruntSpeed, runnerHealth, runnerSpeed, contactDamage, hurtCooldown,
-                spawnInterval, minSpawnInterval, waveDuration })
+                spawnInterval, minSpawnInterval, waveDuration,
+                arrowDamage, arrowCooldown, arrowSpeed, arrowRadius,
+                laserDamagePerSecond, laserRange, laserWidth,
+                laserHeatPerSecond, laserCoolPerSecond, laserOverheatPenalty })
                 if (!Vec2.Finite(value) || value <= 0) throw new ArgumentException("Balance values must be finite and positive.");
             if (!Vec2.Finite(punchKnockback) || punchKnockback < 0) throw new ArgumentException("Invalid knockback.");
             if (maxEnemies < 1 || maxEnemies > 1000 || minSpawnInterval > spawnInterval ||
                 arenaHalfWidth <= 1 || arenaHalfHeight <= 1 || string.IsNullOrWhiteSpace(version))
                 throw new ArgumentException("Invalid limits or version.");
+            if (arrowPierce < 1 || arrowPierce > 20) throw new ArgumentException("arrowPierce must be between 1 and 20.");
         }
     }
 
     public struct PlayerInput
     {
         public Vec2 move, aim;
+        /// <summary>Fire once: a punch, or the release of a drawn arrow.</summary>
         public bool punch;
+        /// <summary>The attack control is held down: the laser beam is on, or an arrow is being aimed.</summary>
+        public bool hold;
         public PlayerInput(Vec2 move, Vec2 aim, bool punch)
-        { this.move = move; this.aim = aim; this.punch = punch; }
+        { this.move = move; this.aim = aim; this.punch = punch; this.hold = false; }
+        public PlayerInput(Vec2 move, Vec2 aim, bool punch, bool hold)
+        { this.move = move; this.aim = aim; this.punch = punch; this.hold = hold; }
     }
 
     public enum RunState { Playing, Won, Lost, Abandoned }
@@ -101,11 +116,16 @@ namespace PetThem.Combat
         public BalanceConfig GetConfig() => config.Copy();
 
         public CombatWorld(BalanceConfig config, int seed, bool enableProgression = false)
+            : this(config, seed, enableProgression, WeaponId.Punch) { }
+
+        public CombatWorld(BalanceConfig config, int seed, bool enableProgression, WeaponId weapon)
         {
             if (config == null) throw new ArgumentNullException(nameof(config));
             config.Validate();
             this.config = config.Copy();
             baseConfig = config.Copy();
+            Weapon = weapon;
+            projectileView = projectiles.AsReadOnly();
             ProgressionEnabled = enableProgression;
             progressionRandom = unchecked((uint)seed) ^ 0xa341316c;
             if (progressionRandom == 0) progressionRandom = 1;
@@ -137,27 +157,7 @@ namespace PetThem.Combat
                 nextSpawn = Tick + Frames(interval);
             }
 
-            if (input.punch && Tick >= nextPunch)
-            {
-                nextPunch = Tick + Frames(config.punchCooldown);
-                if (input.aim.Length <= 0.05f)
-                {
-                    Enemy nearest = Nearest(config.punchRange + 1);
-                    if (nearest != null) Facing = (nearest.Position - Position).Normalized;
-                }
-                Emit("attack", "punch", 0, 0, Facing);
-                for (int i = enemies.Count - 1; i >= 0; i--)
-                {
-                    Enemy enemy = enemies[i];
-                    Vec2 delta = enemy.Position - Position;
-                    if (delta.Length <= config.punchRange + 0.35f &&
-                        (delta.Length < 0.01f || Vec2.Dot(Facing, delta.Normalized) >= 0.15f))
-                    {
-                        Damage(enemy, config.punchDamage, "punch");
-                        if (enemy.Health > 0) enemy.Position = Clamp(enemy.Position + Facing * config.punchKnockback, 0.35f);
-                    }
-                }
-            }
+            StepWeapon(input);
             if (Tick >= nextPet)
             {
                 Enemy target = Nearest(config.petRange);
