@@ -52,5 +52,7 @@
   "petControlKnockback": 1.2,
   "petHealInterval": 6.5,
   "petHealAmount": 7,
-  "petGuardReduction": 0.22
+  "petGuardReduction": 0.22,
+  "boriPrice": 320,
+  "cocoPrice": 520
 }

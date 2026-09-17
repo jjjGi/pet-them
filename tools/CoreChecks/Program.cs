@@ -549,6 +549,77 @@ Check("bad pet values are rejected", () =>
     Throws(() => new CombatWorld(new BalanceConfig { petHealInterval = 0 }, 1));
     Throws(() => new CombatWorld(new BalanceConfig { petControlDamageShare = 0 }, 1));
 });
+Check("buying a pet costs exactly its price and cannot go wrong halfway", () =>
+{
+    var config = new BalanceConfig();
+    var profile = new PlayerProfile();
+    True(profile.IsUnlocked(PetId.Mochi));
+    True(!profile.IsUnlocked(PetId.Bori) && !profile.IsUnlocked(PetId.Coco));
+    True(PlayerProfile.PriceOf(PetId.Mochi, config) == 0);
+
+    // Too poor: nothing changes at all.
+    profile.AddRunReward(PlayerProfile.PriceOf(PetId.Bori, config) - 1);
+    int before = profile.coins;
+    True(!profile.Unlock(PetId.Bori, config));
+    True(profile.coins == before && !profile.IsUnlocked(PetId.Bori));
+
+    profile.AddRunReward(1);
+    True(profile.Unlock(PetId.Bori, config));
+    True(profile.IsUnlocked(PetId.Bori));
+    True(profile.coins == 0);
+
+    // Buying the same pet twice takes no more coins.
+    profile.AddRunReward(10000);
+    int rich = profile.coins;
+    True(!profile.Unlock(PetId.Bori, config));
+    True(profile.coins == rich);
+
+    // The starter pet is never for sale.
+    True(!profile.Unlock(PetId.Mochi, config));
+    True(profile.coins == rich);
+
+    True(profile.Unlock(PetId.Coco, config));
+    True(profile.coins == rich - PlayerProfile.PriceOf(PetId.Coco, config));
+
+    // A run's coins are added, and a negative reward never removes any.
+    int held = profile.coins;
+    int runs = profile.runsFinished;
+    profile.AddRunReward(-50);
+    True(profile.coins == held && profile.runsFinished == runs);
+    profile.AddRunReward(7);
+    True(profile.coins == held + 7 && profile.runsFinished == runs + 1);
+});
+Check("a damaged save is repaired instead of breaking the game", () =>
+{
+    var clean = new PlayerProfile { coins = 12 };
+    True(clean.Normalize().Count == 0);
+
+    var broken = new PlayerProfile
+    {
+        schemaVersion = 99,
+        coins = -500,
+        runsFinished = -3,
+        unlockedPets = new[] { "Bori", "Bori", "Dragon", "" },
+    };
+    var repairs = broken.Normalize();
+    True(repairs.Count >= 4);
+    True(broken.coins == 0 && broken.runsFinished == 0);
+    True(broken.schemaVersion == PlayerProfile.CurrentSchemaVersion);
+    // The starter pet comes back, the duplicate and the unknown name are gone, Bori is kept.
+    True(broken.IsUnlocked(PetId.Mochi) && broken.IsUnlocked(PetId.Bori));
+    True(broken.unlockedPets.Length == 2);
+
+    var empty = new PlayerProfile { unlockedPets = null! };
+    empty.Normalize();
+    True(empty.IsUnlocked(PetId.Mochi) && empty.unlockedPets!.Length == 1);
+
+    // Normalizing twice changes nothing the second time.
+    var again = broken.Normalize();
+    True(again.Count == 0);
+
+    Throws(() => new CombatWorld(new BalanceConfig { boriPrice = 0 }, 1));
+    Throws(() => new CombatWorld(new BalanceConfig { cocoPrice = float.NaN }, 1));
+});
 Console.WriteLine(passed + " checks passed.");
 return;
 

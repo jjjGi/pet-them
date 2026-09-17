@@ -48,6 +48,8 @@ namespace PetThem.Combat
         public float petControlDamageShare = 0.45f, petSupportDamageShare = 0.3f;
         public float petSlowFactor = 0.45f, petSlowSeconds = 1.6f, petControlKnockback = 1.2f;
         public float petHealInterval = 6.5f, petHealAmount = 7, petGuardReduction = 0.22f;
+        // Shop prices, in coins. Mochi is the starter pet and is never for sale.
+        public float boriPrice = 320, cocoPrice = 520;
 
         public BalanceConfig Copy() => (BalanceConfig)MemberwiseClone();
         public void Validate()
@@ -71,6 +73,8 @@ namespace PetThem.Combat
             if (!Vec2.Finite(punchKnockback) || punchKnockback < 0) throw new ArgumentException("Invalid knockback.");
             foreach (float reward in new[] { coinsPerKill, coinsPerBossKill, coinsPerSecondSurvived })
                 if (!Vec2.Finite(reward) || reward < 0) throw new ArgumentException("Reward values must be finite and not negative.");
+            foreach (float price in new[] { boriPrice, cocoPrice })
+                if (!Vec2.Finite(price) || price < 1) throw new ArgumentException("Shop prices must be at least 1 coin.");
             if (!Vec2.Finite(bruteShare) || bruteShare < 0 || bruteShare > 0.9f)
                 throw new ArgumentException("bruteShare must be between 0 and 0.9.");
             if (maxEnemies < 1 || maxEnemies > 1000 || minSpawnInterval > spawnInterval ||

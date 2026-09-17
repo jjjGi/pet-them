@@ -26,6 +26,9 @@ namespace PetThem.Game
         private GameObject beam;
         private WeaponId weapon = WeaponId.Punch;
         private PetId petChoice = PetId.Mochi;
+        private PlayerProfile profile;
+        private bool shopOpen;
+        private int lastRunCoins;
         private Vec2 move, aim, queuedAim;
         private bool queuedPunch, holdAttack, paused, started;
         private int moveFinger = -1, attackFinger = -1;
@@ -60,6 +63,8 @@ namespace PetThem.Game
             if (asset == null) throw new InvalidOperationException("Missing balance-default.json.");
             config = JsonUtility.FromJson<BalanceConfig>(asset.text);
             config.Validate();
+            profile = ProfileStore.Load();
+            if (!profile.IsUnlocked(petChoice)) petChoice = PlayerProfile.StarterPet;
             CreateArena();
             player = CreateCreature("You", paper, 0.9f, 10, true).transform;
             pet = CreateCreature("Mochi", mint, 0.55f, 11, true).transform;
@@ -82,7 +87,7 @@ namespace PetThem.Game
             if (pet != null) Destroy(pet.gameObject);
             pet = CreateCreature(PetName(petChoice), PetColor(petChoice), 0.55f, 11, true).transform;
             world = new CombatWorld(config, unchecked(Environment.TickCount), true, weapon, petChoice);
-            started = true; paused = false; accumulator = 0; hurtFlash = 0;
+            started = true; paused = false; shopOpen = false; accumulator = 0; hurtFlash = 0;
             ClearInput();
             recordingError = "";
             try { recorder = new RunRecorder(world); recordingPath = recorder.FilePath; }
@@ -111,7 +116,7 @@ namespace PetThem.Game
                     RecordEvents();
                     foreach (CombatEvent e in world.Events) ShowEvent(e);
                     accumulator -= CombatWorld.StepSeconds;
-                    if (world.State != RunState.Playing) { EndRecording(false); ClearInput(); break; }
+                    if (world.State != RunState.Playing) { EndRecording(false); ClearInput(); BankRun(); break; }
                     if (world.HasUpgradeChoice) { ClearInput(); FlushRecording(); break; }
                 }
             }
@@ -205,6 +210,25 @@ namespace PetThem.Game
             if (!world.ChooseUpgrade(world.UpgradeChoices[index].Id)) return;
             RecordEvents(); FlushRecording(); ClearInput();
         }
+        /// <summary>
+        /// Pays out a finished run. Abandoning pays nothing, so restarting is not a way to farm
+        /// the first easy seconds over and over.
+        /// </summary>
+        private void BankRun()
+        {
+            if (world.State != RunState.Won && world.State != RunState.Lost) return;
+            lastRunCoins = world.Coins;
+            profile.AddRunReward(lastRunCoins);
+            ProfileStore.Save(profile);
+        }
+
+        private void Buy(PetId target)
+        {
+            if (!profile.Unlock(target, config)) return;
+            ProfileStore.Save(profile);
+            petChoice = target;
+        }
+
         private void TogglePause() { paused = !paused; ClearInput(); FlushRecording(); }
         private void OnApplicationFocus(bool focus) { if (!focus && started) { paused = true; ClearInput(); FlushRecording(); } }
         private void OnApplicationPause(bool pause) { if (pause && started) { paused = true; ClearInput(); FlushRecording(); } }
@@ -494,7 +518,9 @@ namespace PetThem.Game
             }
             if (started && !paused && world.State == RunState.Playing && world.HasUpgradeChoice)
                 DrawUpgradeChoices(width);
-            if (!started || paused || world.State != RunState.Playing)
+            bool onMenu = !started || paused || world.State != RunState.Playing;
+            if (onMenu && shopOpen) { DrawShop(width); return; }
+            if (onMenu)
             {
                 Panel(new Rect(0,76,width,644),new Color(ink.r,ink.g,ink.b,.92f));
                 float left = width/2-340;
@@ -505,7 +531,8 @@ namespace PetThem.Game
                 GUI.Label(new Rect(left,265,680,90),!started ?
                     "Survive 3 minutes. A big one shows up at 2:00.\nPick a weapon and a buddy, then one of 3 upgrades per level." :
                     "Time " + FormatTime(world.Time) + "   /   " + world.Kills + " KOs   /   Wave " + world.Wave +
-                    "\n" + world.Coins + " COINS" + (world.BossDefeated ? "   (big one bonus included)" : ""),heading);
+                    "\n+" + lastRunCoins + " COINS" + (world.BossDefeated ? " (big one bonus)" : "") +
+                    "   /   " + profile.coins + " saved",heading);
                 bool picking = !started || world.State != RunState.Playing;
                 GUI.Label(new Rect(left,370,680,90),!started ?
                     "Move with your left thumb. The right side attacks.\nMochi attacks automatically.\nDesktop: WASD + mouse. SPACE auto-targets." :
@@ -516,8 +543,10 @@ namespace PetThem.Game
                 { if (started && paused && world.State == RunState.Playing) TogglePause(); else StartRun(); }
                 if (started && paused && world.State == RunState.Playing &&
                     GUI.Button(new Rect(left+360,608,220,58),"RESTART",button)) StartRun();
+                else if (picking && GUI.Button(new Rect(left+360,608,300,58),
+                    "SHOP  /  " + profile.coins,button)) shopOpen = true;
                 GUI.Label(new Rect(left,676,680,44),recordingError.Length > 0 ? recordingError :
-                    started ? "Run log: " + recordingPath : "PROTOTYPE 0.5  /  WEAPONS + BUDDIES + BOSS",small);
+                    started ? "Run log: " + recordingPath : "PROTOTYPE 0.6  /  WEAPONS + BUDDIES + BOSS + SHOP",small);
             }
         }
         /// <summary>
@@ -542,13 +571,64 @@ namespace PetThem.Game
             var pets = new[] { PetId.Mochi, PetId.Bori, PetId.Coco };
             for (int i = 0; i < pets.Length; i++)
             {
+                bool owned = profile.IsUnlocked(pets[i]);
                 bool chosen = petChoice == pets[i];
                 Color previous = GUI.color;
-                GUI.color = chosen ? PetColor(pets[i]) : new Color(1,1,1,.55f);
-                if (GUI.Button(new Rect(left + i * 190,546,178,44),
-                    (chosen ? "> " : "") + PetName(pets[i]),button)) petChoice = pets[i];
+                GUI.color = !owned ? new Color(1,1,1,.3f) : chosen ? PetColor(pets[i]) : new Color(1,1,1,.55f);
+                string label = owned ? (chosen ? "> " : "") + PetName(pets[i])
+                    : PetName(pets[i]) + "  " + PlayerProfile.PriceOf(pets[i], config);
+                if (GUI.Button(new Rect(left + i * 190,546,178,44),label,button))
+                {
+                    // A locked buddy sends the player to the shop rather than silently doing nothing.
+                    if (owned) petChoice = pets[i]; else shopOpen = true;
+                }
                 GUI.color = previous;
             }
+        }
+
+        /// <summary>
+        /// The shop is the only place coins are spent. It is deliberately a separate screen so a
+        /// mis-tap on the start screen cannot buy anything.
+        /// </summary>
+        private void DrawShop(float width)
+        {
+            Panel(new Rect(0,76,width,644),new Color(ink.r,ink.g,ink.b,.97f));
+            float left = 32;
+            GUI.Label(new Rect(left,120,width-64,50),"BUDDY SHOP",heading);
+            GUI.Label(new Rect(left,176,width-64,40),
+                profile.coins + " COINS   /   " + profile.runsFinished + " runs finished",body);
+            GUI.Label(new Rect(left,220,width-64,34),
+                "Coins come from KOs, time survived and taking down the big one.",small);
+
+            var pets = new[] { PetId.Mochi, PetId.Bori, PetId.Coco };
+            float gap = 16, cardWidth = (width - 64 - gap * 2) / 3;
+            for (int i = 0; i < pets.Length; i++)
+            {
+                PetId id = pets[i];
+                bool owned = profile.IsUnlocked(id);
+                int price = PlayerProfile.PriceOf(id, config);
+                float x = left + i * (cardWidth + gap);
+                Panel(new Rect(x,280,cardWidth,280),new Color32(34,57,65,255));
+
+                Color previous = GUI.color;
+                GUI.color = PetColor(id);
+                GUI.Label(new Rect(x+16,296,cardWidth-32,44),PetName(id),heading);
+                GUI.color = previous;
+                GUI.Label(new Rect(x+16,344,cardWidth-32,110),PetRole(id),body);
+
+                if (owned)
+                    GUI.Label(new Rect(x+16,470,cardWidth-32,40),
+                        id == PlayerProfile.StarterPet ? "YOURS FROM THE START" : "OWNED",small);
+                else if (profile.coins < price)
+                    GUI.Label(new Rect(x+16,470,cardWidth-32,40),
+                        price + " COINS  /  " + (price - profile.coins) + " short",small);
+                else if (GUI.Button(new Rect(x+16,462,cardWidth-32,46),"UNLOCK  " + price,button))
+                    Buy(id);
+            }
+
+            if (GUI.Button(new Rect(left,596,300,58),"< BACK",button)) shopOpen = false;
+            GUI.Label(new Rect(left,668,width-64,40),
+                ProfileStore.Status.Length > 0 ? ProfileStore.Status : "Save: " + ProfileStore.FilePath,small);
         }
 
         private static string WeaponName(WeaponId id) =>
