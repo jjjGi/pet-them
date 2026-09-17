@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Compiles the Unity scripts against the real UnityEngine and UnityEditor assemblies, without
+    opening the editor. It catches what the editor would reject, in seconds, and works while the
+    editor is open on the same project.
+
+    It covers Assets/Editor as well as Assets/Scripts. An earlier version checked only the runtime
+    scripts, reported a clean build, and the Android build then failed on a missing using in an
+    editor script. A check that misses a whole folder is worse than no check, because it is
+    believed.
+
+    Point UnityEditorRoot somewhere else if the editor lives elsewhere.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <UnityEditorRoot Condition="'$(UnityEditorRoot)' == '' and '$(UNITY_EDITOR_ROOT)' != ''">$(UNITY_EDITOR_ROOT)</UnityEditorRoot>
+    <UnityEditorRoot Condition="'$(UnityEditorRoot)' == ''">C:/Program Files/Unity/Hub/Editor/6000.3.24f1</UnityEditorRoot>
+  </PropertyGroup>
+
+  <Target Name="RequireUnity" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('$(UnityEditorRoot)/Editor/Data/Managed/UnityEngine')"
+           Text="Unity not found at '$(UnityEditorRoot)'. Install Unity 6000.3.24f1, or set UNITY_EDITOR_ROOT to where it is." />
+  </Target>
+
+  <ItemGroup>
+    <Compile Include="../../game/Assets/Scripts/*.cs" />
+    <Compile Include="../../game/Assets/Editor/*.cs" />
+    <ProjectReference Include="../CombatCore/CombatCore.csproj" />
+    <!--
+      That one folder holds both the UnityEngine.*Module and UnityEditor.*Module assemblies, which
+      is everything the scripts need. The monolithic UnityEditor.dll next to it declares the same
+      types again, so referencing both makes every editor attribute ambiguous.
+    -->
+    <Reference Include="$(UnityEditorRoot)/Editor/Data/Managed/UnityEngine/*.dll" />
+  </ItemGroup>
+</Project>

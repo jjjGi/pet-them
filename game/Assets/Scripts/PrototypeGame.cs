@@ -37,7 +37,9 @@ namespace PetThem.Game
         private float drawAmount;
         private float accumulator, hurtFlash;
         private string recordingPath = "", recordingError = "";
-        private GUIStyle title, heading, body, small, button, menuTitle, menuHeading, menuButton;
+        private GUIStyle title, heading, body, small, button, menuTitle, menuHeading, menuButton, diagnostic;
+        private string fontReport = "";
+        private bool koreanUnavailable;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Bootstrap()
@@ -532,15 +534,7 @@ namespace PetThem.Game
         private void InitStyles()
         {
             if (body != null) return;
-            Font glyphs = Font.CreateDynamicFontFromOSFont(new[]
-            {
-                "Malgun Gothic", "맑은 고딕",            // Windows
-                "Apple SD Gothic Neo", "AppleGothic",     // macOS and iOS
-                "Noto Sans CJK KR", "Noto Sans KR",       // Linux and newer Android
-                "NanumGothic", "NanumBarunGothic",
-                "Droid Sans Fallback", "DroidSansFallback", // older Android
-                "Arial",
-            }, 32);
+            Font glyphs = ResolveFont();
 
             title = new GUIStyle(GUI.skin.label) { fontSize = 56, fontStyle = FontStyle.Bold };
             heading = new GUIStyle(GUI.skin.label) { fontSize = 26, fontStyle = FontStyle.Bold };
@@ -555,6 +549,103 @@ namespace PetThem.Game
             menuTitle = new GUIStyle(title) { fontSize = 44, wordWrap = true };
             menuHeading = new GUIStyle(heading) { fontSize = 24, wordWrap = true };
             menuButton = new GUIStyle(button) { wordWrap = true };
+
+            // Deliberately keeps the built-in font: if the chosen one cannot draw, this line is
+            // the only thing on screen that can say so.
+            diagnostic = new GUIStyle(GUI.skin.label) { fontSize = 14, wordWrap = true };
+            diagnostic.normal.textColor = new Color(1, 1, 1, .5f);
+        }
+
+        /// <summary>
+        /// Picks a font that can actually draw the text, or gives up and keeps the built-in one.
+        /// </summary>
+        /// <remarks>
+        /// The first attempt at this handed a list of font names to the OS and used whatever came
+        /// back. On Android none of those names existed, the call still returned a Font object,
+        /// and assigning it wiped every label in the game -- English included. So: ask the device
+        /// what it has, and prove the result can draw an "A" and a Hangul syllable before using it.
+        ///
+        /// Returning null is a valid outcome. The built-in font has no Hangul but it does have
+        /// Latin, and English that renders beats Korean that does not.
+        /// </remarks>
+        private Font ResolveFont()
+        {
+            string[] wanted =
+            {
+                "Malgun Gothic", "맑은 고딕",              // Windows
+                "Apple SD Gothic Neo", "AppleGothic",       // macOS and iOS
+                "Noto Sans CJK", "Noto Sans KR", "NotoSansKR",
+                "NanumGothic", "Nanum Gothic", "NanumBarunGothic",
+                "Droid Sans Fallback", "DroidSansFallback", // older Android
+                "Noto Sans", "Roboto", "Arial",             // Latin-only last resorts
+            };
+
+            string[] installed;
+            try { installed = Font.GetOSInstalledFontNames() ?? Array.Empty<string>(); }
+            catch (Exception) { installed = Array.Empty<string>(); }
+
+            Font latinOnly = null;
+            string latinName = "";
+            foreach (string want in wanted)
+            {
+                foreach (string have in installed)
+                {
+                    if (have == null || have.IndexOf(want, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    Font candidate = TryFont(have);
+                    if (candidate == null) continue;
+                    if (candidate.HasCharacter('가'))
+                    {
+                        fontReport = "font: " + have + " (Hangul ok)";
+                        return candidate;
+                    }
+                    if (latinOnly == null) { latinOnly = candidate; latinName = have; }
+                }
+            }
+
+            // Some Android builds report no installed fonts at all yet still create one from a
+            // name. Worth a try, but only because the result is verified before it is used.
+            foreach (string want in wanted)
+            {
+                Font candidate = TryFont(want);
+                if (candidate == null || !candidate.HasCharacter('가')) continue;
+                fontReport = "font: " + want + " (unlisted, Hangul ok)";
+                return candidate;
+            }
+
+            // A sample of what the device reported, so the next fix is not another guess.
+            string sample = installed.Length == 0 ? "none"
+                : string.Join(", ", installed, 0, Math.Min(6, installed.Length));
+
+            if (latinOnly != null)
+            {
+                // Korean would come out blank in this font, so do not offer a language that cannot
+                // be read. English in a font that works is the better failure.
+                koreanUnavailable = true;
+                Texts.Use(Language.English);
+                fontReport = $"font: {latinName}, no Hangul. Korean off. "
+                    + $"{installed.Length} OS fonts: {sample}";
+                return latinOnly;
+            }
+
+            koreanUnavailable = true;
+            Texts.Use(Language.English);
+            fontReport = $"font: built-in fallback, nothing usable. Korean off. "
+                + $"{installed.Length} OS fonts: {sample}";
+            return null;
+        }
+
+        private static Font TryFont(string name)
+        {
+            try
+            {
+                Font font = Font.CreateDynamicFontFromOSFont(name, 32);
+                // A font that cannot draw a plain "A" is not usable, whatever the OS reported.
+                return font != null && font.HasCharacter('A') ? font : null;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
         private void Panel(Rect rect, Color color)
         { Color previous = GUI.color; GUI.color = color; GUI.DrawTexture(rect, Texture2D.whiteTexture); GUI.color = previous; }
@@ -714,10 +805,14 @@ namespace PetThem.Game
             GUILayout.EndHorizontal();
             GUILayout.Space(10);
             // The language button has its own row instead of covering the shop on narrow views.
-            if (GUILayout.Button(Texts.LanguageName(Texts.Next),menuButton,GUILayout.MinHeight(40))) Texts.Use(Texts.Next);
+            if (!koreanUnavailable &&
+                GUILayout.Button(Texts.LanguageName(Texts.Next),menuButton,GUILayout.MinHeight(40)))
+                Texts.Use(Texts.Next);
             GUILayout.Space(8);
             GUILayout.Label(recordingError.Length > 0 ? recordingError :
                 started ? Texts.RunLog(recordingPath) : Texts.Build,small);
+            // Drawn with the built-in font on purpose, so it survives a font that cannot draw.
+            GUILayout.Label(fontReport,diagnostic);
             GUILayout.EndScrollView();
             GUILayout.EndArea();
         }
