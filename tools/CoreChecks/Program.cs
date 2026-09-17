@@ -1056,6 +1056,9 @@ Check("every id the player can see is translated in every language", () =>
             Translated(Texts.Pet(id), id.ToString());
             Translated(Texts.PetRole(id), id.ToString());
         }
+        // Only the moves the player is warned about. Stalk and Telegraph are never named on screen.
+        foreach (BossAction move in new[] { BossAction.Charge, BossAction.Slam, BossAction.Summon })
+            Translated(Texts.BossMove(move), move.ToString());
 
         // A sample of the screen text, so a language that is only half filled in is caught.
         foreach (string line in new[]
@@ -1064,6 +1067,7 @@ Check("every id the player can see is translated in every language", () =>
                      Texts.Play, Texts.TryAgain, Texts.Restart, Texts.Back, Texts.Build,
                      Texts.ShopHeadline, Texts.ShopHint, Texts.Owned, Texts.Starter,
                      Texts.LevelUpHeadline, Texts.LevelUpHint, Texts.MoveHint, Texts.Heat,
+                     Texts.BossEnraged, Texts.BossDownHeadline,
                  })
             True(!string.IsNullOrWhiteSpace(line));
     }
