@@ -170,7 +170,11 @@ namespace PetThem.Game
                         attackSeen = true;
                         attackPoint = p;
                         Vector2 delta = p - attackAnchor;
-                        aim = delta.magnitude > radius * .15f ? new Vec2(delta.x, delta.y).Normalized : new Vec2();
+                        // The bow is pulled backwards and the arrow leaves forwards, so its aim is
+                        // the opposite of the drag. The punch and the laser point where you drag.
+                        Vector2 heading = weapon == WeaponId.Arrow ? -delta : delta;
+                        aim = delta.magnitude > radius * .15f
+                            ? new Vec2(heading.x, heading.y).Normalized : new Vec2();
                         drawAmount = Mathf.Clamp01(delta.magnitude / radius);
                         holdAttack = !ended;
                         if (ended)
@@ -201,9 +205,10 @@ namespace PetThem.Game
                 if (weapon == WeaponId.Arrow)
                 {
                     // The bow is drawn from wherever the button went down, the same gesture as the
-                    // movement stick. Pointing at the cursor would make it a click again.
+                    // movement stick. Pointing at the cursor would make it a click again, and the
+                    // arrow leaves the opposite way to the pull, like letting go of a bowstring.
                     Vector2 pull = (Vector2)Input.mousePosition - attackAnchor;
-                    aim = pull.magnitude > radius * .15f ? new Vec2(pull.x, pull.y).Normalized : new Vec2();
+                    aim = pull.magnitude > radius * .15f ? new Vec2(-pull.x, -pull.y).Normalized : new Vec2();
                     drawAmount = Mathf.Clamp01(pull.magnitude / radius);
                 }
                 else
@@ -635,12 +640,19 @@ namespace PetThem.Game
             GUI.color = new Color(tint.r, tint.g, tint.b, .18f);
             GUI.DrawTexture(new Rect(anchor.x - 64, anchor.y - 64, 128, 128), Art.SoftCircle.texture);
 
-            // A line of dots from the anchor to the pull, so the direction reads at a glance.
-            GUI.color = new Color(tint.r, tint.g, tint.b, .75f);
+            // Where the finger is: the string drawn back. Dimmer, because it is not the answer to
+            // "where will this go".
+            GUI.color = new Color(tint.r, tint.g, tint.b, .35f);
+            GUI.DrawTexture(new Rect(anchor.x + delta.x - 13, anchor.y + delta.y - 13, 26, 26),
+                Art.SoftCircle.texture);
+
+            // Dots the other way, growing outward: the arrow leaves opposite the pull, and this is
+            // the only thing on screen that says so.
+            GUI.color = new Color(tint.r, tint.g, tint.b, .8f);
             for (int i = 1; i <= 5; i++)
             {
-                Vector2 at = anchor + delta * (i / 5f);
-                float dot = 5 + i * 1.6f;
+                Vector2 at = anchor - delta * (i / 5f);
+                float dot = 4 + i * 1.8f;
                 GUI.DrawTexture(new Rect(at.x - dot, at.y - dot, dot * 2, dot * 2), Art.SoftCircle.texture);
             }
 

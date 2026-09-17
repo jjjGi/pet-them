@@ -55,7 +55,7 @@ namespace PetThem.Game
         {
             switch (id)
             {
-                case WeaponId.Arrow: return Pick("당겼다가 놓으면 발사, 많이 당길수록 세게", "pull back and let go, the further the stronger");
+                case WeaponId.Arrow: return Pick("뒤로 당겼다 놓으면 앞으로 날아갑니다", "pull back and let go, it flies the other way");
                 case WeaponId.Laser: return Pick("누르는 동안 계속, 열 주의", "hold to burn, watch the heat");
                 case WeaponId.Punch: return Pick("탭으로 휘두름, 끌어서 조준", "tap to swing, drag to aim");
                 default: return id.ToString();
