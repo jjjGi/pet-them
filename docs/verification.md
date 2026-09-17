@@ -608,3 +608,15 @@ Windows(맑은 고딕) → macOS/iOS(Apple SD Gothic Neo) → Linux·최신 Andr
 - 모바일에서 당김 반경(화면 높이의 11%)이 엄지에 맞는지.
 - 게이지 위치가 손가락에 가리지 않는지.
 - 봇은 여전히 풀파워로만 쏜다. 당김을 쓰는 봇 정책은 실험실 재개 시점의 작업이다.
+
+## 2026-09-18 — Clay Garden 아트 적용 (0.10.0)
+
+- image_gen으로 캐릭터 8종(1254×1254 RGBA), 배경(1659×948) 생성 후 프로젝트에 복사.
+- 8종 캐릭터 PNG 모서리 alpha=0 확인. Unity 렌더에서도 투명 배경과 실루엣을 확인.
+- Art.Creature 로딩·임포트 설정·배경·시작/상점 초상화 적용. 규칙/밸런스 수정 없음.
+- 게임 검사 36개 통과.
+- 원래 사용자 에디터와 별개인 experiments/art-verify-56787922 복사본에서 Unity 6000.3.24f1 배치 임포트·컴파일·렌더 실행.
+- 최종 verify-final.log: ART VERIFIED 8종 각 512×512, ART VERIFICATION PASSED. 컴파일 오류 없음, 검증 프로세스 종료 확인.
+- 실제 Unity 렌더 산출물: docs/art/character-lineup.png, docs/art/arena-preview.png. 직접 시각 확인.
+- 검증 장면은 실제 플레이 캡처가 아니다. 신규 메뉴/상점 배치와 실제 입력, Android 성능·새 APK는 미검증.
+- 제작 프롬프트·아트 경로와 생성 방식은 docs/art-direction.md.

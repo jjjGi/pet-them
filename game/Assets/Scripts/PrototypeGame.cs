@@ -286,6 +286,20 @@ namespace PetThem.Game
 
         private void CreateArena()
         {
+            Sprite artwork = Art.Arena;
+            if (artwork != null)
+            {
+                var arena = new GameObject("Forest playground");
+                arena.transform.SetParent(transform);
+                // Put the decorative border outside the unchanged combat rectangle.
+                arena.transform.localScale = new Vector3(config.arenaHalfWidth * 2 / .88f / artwork.bounds.size.x,
+                    config.arenaHalfHeight * 2 / .88f / artwork.bounds.size.y, 1);
+                var renderer = arena.AddComponent<SpriteRenderer>();
+                renderer.sprite = artwork;
+                renderer.sortingOrder = -10;
+                gameCamera.backgroundColor = new Color32(40, 65, 57, 255);
+                return;
+            }
             RectSprite("Arena", Vector2.zero, new Vector2(config.arenaHalfWidth * 2, config.arenaHalfHeight * 2),
                 new Color32(34, 57, 65, 255), -10);
             for (int x = -(int)config.arenaHalfWidth; x <= config.arenaHalfWidth; x += 2)
@@ -540,6 +554,11 @@ namespace PetThem.Game
             {
                 Panel(new Rect(0,76,width,644),new Color(ink.r,ink.g,ink.b,.92f));
                 float left = width/2-340;
+                if (width >= 1100)
+                {
+                    GUI.DrawTexture(new Rect(left-215,180,190,190),Art.Creature(Look.Player).texture,ScaleMode.ScaleToFit,true);
+                    GUI.DrawTexture(new Rect(left-178,383,120,120),Art.Creature(LookOf(petChoice)).texture,ScaleMode.ScaleToFit,true);
+                }
                 GUI.Label(new Rect(left,158,700,90),!started ? Texts.StartHeadline :
                     paused && world.State == RunState.Playing ? Texts.PausedHeadline :
                     world.BossDefeated ? Texts.BossDownHeadline :
@@ -661,21 +680,22 @@ namespace PetThem.Game
                 bool owned = profile.IsUnlocked(id);
                 int price = PlayerProfile.PriceOf(id, config);
                 float x = left + i * (cardWidth + gap);
-                Panel(new Rect(x,280,cardWidth,280),new Color32(34,57,65,255));
+                Panel(new Rect(x,266,cardWidth,310),new Color32(34,57,65,255));
+                GUI.DrawTexture(new Rect(x+cardWidth/2-50,278,100,100),Art.Creature(LookOf(id)).texture,ScaleMode.ScaleToFit,true);
 
                 Color previous = GUI.color;
                 GUI.color = PetColor(id);
-                GUI.Label(new Rect(x+16,296,cardWidth-32,44),Texts.Pet(id),heading);
+                GUI.Label(new Rect(x+16,380,cardWidth-32,38),Texts.Pet(id),heading);
                 GUI.color = previous;
-                GUI.Label(new Rect(x+16,344,cardWidth-32,110),Texts.PetRole(id),body);
+                GUI.Label(new Rect(x+16,422,cardWidth-32,80),Texts.PetRole(id),body);
 
                 if (owned)
-                    GUI.Label(new Rect(x+16,470,cardWidth-32,40),
+                    GUI.Label(new Rect(x+16,516,cardWidth-32,46),
                         id == PlayerProfile.StarterPet ? Texts.Starter : Texts.Owned,small);
                 else if (profile.coins < price)
-                    GUI.Label(new Rect(x+16,470,cardWidth-32,40),
+                    GUI.Label(new Rect(x+16,516,cardWidth-32,46),
                         Texts.Short(price, price - profile.coins),small);
-                else if (GUI.Button(new Rect(x+16,462,cardWidth-32,46),Texts.Unlock(price),button))
+                else if (GUI.Button(new Rect(x+16,516,cardWidth-32,46),Texts.Unlock(price),button))
                     Buy(id);
             }
 

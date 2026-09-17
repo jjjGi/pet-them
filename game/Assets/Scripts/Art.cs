@@ -8,21 +8,12 @@ namespace PetThem.Game
     public enum Look { Player, Mochi, Bori, Coco, Grunt, Runner, Brute, Boss }
 
     /// <summary>
-    /// Draws the game's sprites in code: no image files, nothing to license, and it stays sharp at
-    /// any resolution.
+    /// Loads the clay art set. Procedural creatures remain a fallback for a missing asset.
     /// </summary>
     /// <remarks>
-    /// This is placeholder art made deliberate rather than final art. Two things it does buy:
-    ///
-    /// Silhouette. Colour alone stops working once a crowd overlaps, so each creature has its own
-    /// outline shape and the player can still read the field at a glance.
-    ///
-    /// Draw calls. A creature used to be five GameObjects (body, two eyes, two ears). With a
-    /// hundred enemies on screen that is five hundred renderers on a phone. Everything is baked
-    /// into one texture here, so a creature is one.
-    ///
-    /// Replacing this with drawn art later means returning a loaded Sprite from <see cref="Creature"/>
-    /// instead of a generated one. Nothing outside this file knows how the pixels were made.
+    /// Imported RGBA illustrations supply faces and silhouettes in one renderer per creature.
+    /// They are 2D sprites with a sculpted appearance, not rigged 3D meshes. Imported textures
+    /// belong to Unity; only the runtime Sprite wrappers and procedural fallback textures are destroyed.
     /// </remarks>
     public static class Art
     {
@@ -31,7 +22,8 @@ namespace PetThem.Game
 
         private static readonly Color Ink = new Color32(19, 32, 44, 255);
         private static readonly Dictionary<Look, Sprite> cache = new Dictionary<Look, Sprite>();
-        private static Sprite softCircle, block, ring;
+        private static readonly HashSet<Sprite> importedSprites = new HashSet<Sprite>();
+        private static Sprite softCircle, block, ring, arena;
 
         public static Color ColorOf(Look look)
         {
@@ -52,10 +44,29 @@ namespace PetThem.Game
         public static Sprite Creature(Look look)
         {
             if (cache.TryGetValue(look, out Sprite existing)) return existing;
-            Sprite made = Sprite.Create(Bake(look), new Rect(0, 0, Size, Size), new Vector2(.5f, .5f), Size);
+            Sprite made = LoadArtwork(look.ToString());
+            if (made == null)
+            {
+                Debug.LogWarning("Missing clay artwork: " + look + ". Using procedural fallback.");
+                made = Sprite.Create(Bake(look), new Rect(0, 0, Size, Size), new Vector2(.5f, .5f), Size);
+            }
             made.name = look + " sprite";
             cache[look] = made;
             return made;
+        }
+
+        public static Sprite Arena => arena != null ? arena : arena = LoadArtwork("Arena");
+
+        private static Sprite LoadArtwork(string name)
+        {
+            Texture2D texture = Resources.Load<Texture2D>("Art/Clay/" + name);
+            if (texture == null) return null;
+            // Normalize after import resizing: every creature retains a one-unit canvas.
+            Sprite sprite = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height),
+                new Vector2(.5f, .5f), Mathf.Max(texture.width, texture.height), 0, SpriteMeshType.FullRect);
+            sprite.name = name + " clay artwork";
+            importedSprites.Add(sprite);
+            return sprite;
         }
 
         /// <summary>A soft dot, used for effects and the on-screen thumbstick.</summary>
@@ -83,12 +94,15 @@ namespace PetThem.Game
             Destroy(softCircle); softCircle = null;
             Destroy(block); block = null;
             Destroy(ring); ring = null;
+            Destroy(arena); arena = null;
+            importedSprites.Clear();
         }
 
         private static void Destroy(Sprite sprite)
         {
             if (sprite == null) return;
-            if (sprite.texture != null) UnityEngine.Object.Destroy(sprite.texture);
+            // Resources textures are imported assets, shared with menus and previews.
+            if (!importedSprites.Contains(sprite) && sprite.texture != null) UnityEngine.Object.Destroy(sprite.texture);
             UnityEngine.Object.Destroy(sprite);
         }
 
