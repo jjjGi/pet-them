@@ -56,5 +56,22 @@
   "petHealAmount": 7,
   "petGuardReduction": 0.22,
   "boriPrice": 320,
-  "cocoPrice": 520
+  "cocoPrice": 520,
+  "droneInterval": 1.15,
+  "droneShare": 0.55,
+  "droneRange": 8,
+  "droneOrbit": 1.9,
+  "orbitRadius": 2.2,
+  "orbitSpeed": 2.4,
+  "orbitDamage": 14,
+  "orbitHitRadius": 0.6,
+  "orbitRecovery": 0.55,
+  "critChance": 0.12,
+  "critMultiplier": 2.4,
+  "blastDamage": 18,
+  "blastRadius": 2.2,
+  "lifestealPerKill": 0.6,
+  "thornsDamage": 12,
+  "regenPerSecond": 0.8,
+  "greedBonus": 0.5
 }

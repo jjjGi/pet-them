@@ -1,5 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
+
+// The rule checks reach one internal seam: applying an upgrade without waiting for it to be
+// offered. Nothing else is shared, and the public API stays the same for the game.
+[assembly: InternalsVisibleTo("CoreChecks")]
 
 namespace PetThem.Combat
 {
@@ -53,6 +58,16 @@ namespace PetThem.Combat
         public float petHealInterval = 6.5f, petHealAmount = 7, petGuardReduction = 0.22f;
         // Shop prices, in coins. Mochi is the starter pet and is never for sale.
         public float boriPrice = 320, cocoPrice = 520;
+        // Drones copy the weapon you picked. Damage is a share of that weapon's own damage.
+        public float droneInterval = 1.15f, droneShare = 0.55f, droneRange = 8, droneOrbit = 1.9f;
+        // Orbiting guards. Each one hurts what it brushes past, then waits before hurting it again.
+        public float orbitRadius = 2.2f, orbitSpeed = 2.4f, orbitDamage = 14, orbitHitRadius = 0.6f;
+        public float orbitRecovery = 0.55f;
+        // Effects that fire on an event rather than on a timer.
+        public float critChance = 0.12f, critMultiplier = 2.4f;
+        public float blastDamage = 18, blastRadius = 2.2f;
+        public float lifestealPerKill = 0.6f, thornsDamage = 12, regenPerSecond = 0.8f;
+        public float greedBonus = 0.5f;
 
         public BalanceConfig Copy() => (BalanceConfig)MemberwiseClone();
         public void Validate()
@@ -78,6 +93,15 @@ namespace PetThem.Combat
                 if (!Vec2.Finite(reward) || reward < 0) throw new ArgumentException("Reward values must be finite and not negative.");
             foreach (float price in new[] { boriPrice, cocoPrice })
                 if (!Vec2.Finite(price) || price < 1) throw new ArgumentException("Shop prices must be at least 1 coin.");
+            foreach (float value in new[] { droneInterval, droneShare, droneRange, droneOrbit,
+                orbitRadius, orbitSpeed, orbitDamage, orbitHitRadius, orbitRecovery,
+                critMultiplier, blastDamage, blastRadius, lifestealPerKill, thornsDamage,
+                regenPerSecond, greedBonus })
+                if (!Vec2.Finite(value) || value <= 0)
+                    throw new ArgumentException("Upgrade effect values must be finite and positive.");
+            if (!Vec2.Finite(critChance) || critChance <= 0 || critChance > 1)
+                throw new ArgumentException("critChance must be above 0 and at most 1.");
+            if (critMultiplier < 1) throw new ArgumentException("critMultiplier must be at least 1.");
             if (!Vec2.Finite(bruteShare) || bruteShare < 0 || bruteShare > 0.9f)
                 throw new ArgumentException("bruteShare must be between 0 and 0.9.");
             if (maxEnemies < 1 || maxEnemies > 1000 || minSpawnInterval > spawnInterval ||
@@ -181,6 +205,10 @@ namespace PetThem.Combat
             ProgressionEnabled = enableProgression;
             progressionRandom = unchecked((uint)seed) ^ 0xa341316c;
             if (progressionRandom == 0) progressionRandom = 1;
+            effectRandom = unchecked((uint)seed) ^ 0x2545f491;
+            if (effectRandom == 0) effectRandom = 0x6c078965;
+            droneView = drones.AsReadOnly();
+            orbView = orbs.AsReadOnly();
             Seed = seed;
             random = unchecked((uint)seed);
             if (random == 0) random = 0x9e3779b9;
@@ -213,10 +241,14 @@ namespace PetThem.Combat
             StepWeapon(input);
             // Killing the boss ends the run inside the attack above, so nothing after it may act.
             if (State == RunState.Playing) StepPet();
+            if (State == RunState.Playing) StepCompanions();
 
-            for (int i = 0; i < enemies.Count && State == RunState.Playing; i++)
+            // Walked as a copy: thorns can kill the enemy being handled, and its blast can take
+            // several more with it.
+            foreach (Enemy enemy in ScanEnemies(contactScan))
             {
-                Enemy enemy = enemies[i];
+                if (State != RunState.Playing) break;
+                if (enemy.Health <= 0) continue;
                 Vec2 delta = Position - enemy.Position;
                 float travel = Math.Min(delta.Length, SpeedOf(enemy) * StepSeconds);
                 enemy.Position += delta.Normalized * travel;
@@ -229,6 +261,7 @@ namespace PetThem.Combat
                     Health -= actual;
                     Emit("hurt", enemy.Kind.ToString(), enemy.Id, actual, Position);
                     if (Health <= 0) { State = RunState.Lost; Emit("run_end", "death", enemy.Id, Kills); break; }
+                    ApplyThorns(enemy);
                 }
             }
             if (State == RunState.Playing && Tick >= Frames(config.duration))
@@ -284,14 +317,20 @@ namespace PetThem.Combat
         }
         private void Damage(Enemy enemy, float amount, string source)
         {
-            float actual = Math.Min(amount, enemy.Health);
+            // Thorns and the blast are consequences of a hit, not hits themselves, so they do not
+            // roll for a critical of their own.
+            bool rolls = source != "thorns" && source != "blast";
+            float rolled = rolls ? ApplyCrit(amount) : amount;
+            float actual = Math.Min(rolled, enemy.Health);
             enemy.Health -= actual;
-            Emit("damage", source, enemy.Id, actual, enemy.Position);
+            Emit("damage", rolls && LastHitWasCritical ? source + "_crit" : source,
+                enemy.Id, actual, enemy.Position);
             if (enemy.Health <= 0)
             {
                 enemies.Remove(enemy); Kills++; Emit("kill", source, enemy.Id, 1, enemy.Position);
                 AwardExperience();
                 OnEnemyKilled(enemy);
+                OnKillEffects(enemy);
             }
         }
         private void Emit(string type, string source, int targetId, float value, Vec2 position = default)

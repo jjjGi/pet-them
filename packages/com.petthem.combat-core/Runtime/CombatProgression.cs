@@ -3,6 +3,23 @@ using System.Collections.Generic;
 
 namespace PetThem.Combat
 {
+    /// <summary>
+    /// What kind of card an upgrade is, so the level-up screen can group and colour them.
+    /// </summary>
+    public enum UpgradeKind
+    {
+        /// <summary>Makes the chosen weapon better.</summary>
+        Weapon,
+        /// <summary>Makes the chosen pet better.</summary>
+        Pet,
+        /// <summary>Adds or grows something that fights alongside you.</summary>
+        Friend,
+        /// <summary>Fires off something when you hit, kill, or get hit.</summary>
+        Trigger,
+        /// <summary>Keeps you alive or moving.</summary>
+        Body,
+    }
+
     public enum UpgradeId
     {
         PunchPower, PunchReach,
@@ -11,6 +28,12 @@ namespace PetThem.Combat
         PetPower, PetHaste,
         PetReach, PetChill, PetGuard,
         MoveSpeed, Vitality, Heal,
+        // Things that fight with you.
+        Drone, Orbit,
+        // Things that go off on an event.
+        Crit, Blast, Lifesteal, Thorns,
+        // Everything else.
+        Regen, Greed,
     }
 
     /// <summary>
@@ -68,7 +91,56 @@ namespace PetThem.Combat
         public static bool IsRankCapped(UpgradeId id) =>
             id == UpgradeId.PunchReach || id == UpgradeId.ArrowPierce || id == UpgradeId.LaserCooling ||
             id == UpgradeId.PetHaste || id == UpgradeId.MoveSpeed ||
-            id == UpgradeId.PetReach || id == UpgradeId.PetChill || id == UpgradeId.PetGuard;
+            id == UpgradeId.PetReach || id == UpgradeId.PetChill || id == UpgradeId.PetGuard ||
+            id == UpgradeId.Drone || id == UpgradeId.Orbit ||
+            id == UpgradeId.Crit || id == UpgradeId.Blast || id == UpgradeId.Lifesteal ||
+            id == UpgradeId.Thorns || id == UpgradeId.Regen || id == UpgradeId.Greed;
+
+        /// <summary>
+        /// Which family a card belongs to. The level-up screen groups by this, so a hand of three
+        /// reads as a set of choices rather than a list of numbers.
+        /// </summary>
+        public static UpgradeKind KindOf(UpgradeId id)
+        {
+            switch (id)
+            {
+                case UpgradeId.PunchPower:
+                case UpgradeId.PunchReach:
+                case UpgradeId.ArrowPower:
+                case UpgradeId.ArrowPierce:
+                case UpgradeId.LaserPower:
+                case UpgradeId.LaserCooling: return UpgradeKind.Weapon;
+
+                case UpgradeId.PetPower:
+                case UpgradeId.PetHaste:
+                case UpgradeId.PetReach:
+                case UpgradeId.PetChill:
+                case UpgradeId.PetGuard: return UpgradeKind.Pet;
+
+                case UpgradeId.Drone:
+                case UpgradeId.Orbit: return UpgradeKind.Friend;
+
+                case UpgradeId.Crit:
+                case UpgradeId.Blast:
+                case UpgradeId.Lifesteal:
+                case UpgradeId.Thorns: return UpgradeKind.Trigger;
+
+                default: return UpgradeKind.Body;
+            }
+        }
+
+        /// <summary>Every upgrade taken this run, with its rank. What the pause screen lists.</summary>
+        public IReadOnlyList<UpgradeChoice> TakenUpgrades()
+        {
+            var taken = new List<UpgradeChoice>();
+            foreach (UpgradeId id in Enum.GetValues(typeof(UpgradeId)))
+            {
+                int rank = UpgradeRank(id);
+                if (rank > 0) taken.Add(new UpgradeChoice(id, rank));
+            }
+            taken.Sort((a, b) => b.Rank != a.Rank ? b.Rank - a.Rank : ((int)a.Id - (int)b.Id));
+            return taken;
+        }
 
         private void AwardExperience()
         {
@@ -111,6 +183,16 @@ namespace PetThem.Combat
             if (State != RunState.Playing || !upgradeChoices.Exists(choice => choice.Id == id)) return false;
             events.Clear();
             Experience -= ExperienceToNextLevel;
+            return Apply(id);
+        }
+
+        /// <summary>
+        /// Applies an upgrade without it having been offered. Only the checks use this, to reach a
+        /// given upgrade at a given rank without playing until the cards happen to come up.
+        /// </summary>
+        internal bool Apply(UpgradeId id)
+        {
+            if (State != RunState.Playing) return false;
             Level++;
             upgradeRanks[id] = UpgradeRank(id) + 1;
             switch (id)
@@ -142,6 +224,13 @@ namespace PetThem.Combat
                     Health = Math.Min(MaxHealth, Health + baseConfig.playerHealth * .2f);
                     break;
                 case UpgradeId.Heal: Health = Math.Min(MaxHealth, Health + MaxHealth * .4f); break;
+                case UpgradeId.Greed:
+                    config.coinsPerKill = baseConfig.coinsPerKill * (1 + config.greedBonus * UpgradeRank(id));
+                    break;
+                // Drone, Orbit, Crit, Blast, Lifesteal, Thorns and Regen read their own rank, so
+                // taking one only has to rebuild the ring of friends around the player.
+                case UpgradeId.Drone:
+                case UpgradeId.Orbit: RefreshCompanions(); break;
             }
             Emit("level_up", id.ToString(), 0, Level);
             Emit("upgrade", id.ToString(), 0, UpgradeRank(id));

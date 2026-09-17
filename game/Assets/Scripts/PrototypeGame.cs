@@ -22,6 +22,8 @@ namespace PetThem.Game
         private Transform player, pet;
         private readonly Dictionary<int, GameObject> arrowViews = new Dictionary<int, GameObject>();
         private readonly List<int> staleArrows = new List<int>();
+        private readonly List<GameObject> droneViews = new List<GameObject>();
+        private readonly List<GameObject> orbViews = new List<GameObject>();
         private GameObject beam;
         private WeaponId weapon = WeaponId.Punch;
         private PetId petChoice = PetId.Mochi;
@@ -79,6 +81,10 @@ namespace PetThem.Game
             views.Clear();
             foreach (var view in arrowViews.Values) Destroy(view);
             arrowViews.Clear();
+            foreach (var view in droneViews) Destroy(view);
+            droneViews.Clear();
+            foreach (var view in orbViews) Destroy(view);
+            orbViews.Clear();
             foreach (var view in transient) Destroy(view);
             transient.Clear(); transientEnds.Clear();
             beam.SetActive(false);
@@ -126,6 +132,7 @@ namespace PetThem.Game
             player.GetComponent<SpriteRenderer>().color = Time.unscaledTime < hurtFlash ? coral : Color.white;
             SynchronizeEnemies();
             SynchronizeArrows();
+            SynchronizeCompanions();
             DrawBeam();
             for (int i = transient.Count - 1; i >= 0; i--)
                 if (Time.unscaledTime >= transientEnds[i])
@@ -401,6 +408,59 @@ namespace PetThem.Game
             }
         }
 
+        /// <summary>
+        /// Keeps one object per drone and per orb. They are created as ranks are taken and never
+        /// destroyed mid-run, because a run only ever gains them.
+        /// </summary>
+        private void SynchronizeCompanions()
+        {
+            while (droneViews.Count < world.Drones.Count)
+                droneViews.Add(RectSprite("Drone", Vector2.zero, new Vector2(.42f,.42f),
+                    KindColor(UpgradeKind.Friend), 8));
+            while (orbViews.Count < world.Orbs.Count)
+                orbViews.Add(RectSprite("Orb", Vector2.zero, new Vector2(.34f,.34f),
+                    KindColor(UpgradeKind.Trigger), 8));
+
+            for (int i = 0; i < droneViews.Count; i++)
+            {
+                bool live = i < world.Drones.Count;
+                droneViews[i].SetActive(live);
+                if (!live) continue;
+                Drone drone = world.Drones[i];
+                droneViews[i].transform.position = new Vector3(drone.Position.x, drone.Position.y, 0);
+                // Spin while it works, and flash on the step it fired.
+                droneViews[i].transform.rotation = Quaternion.Euler(0, 0, world.Time * 220);
+                droneViews[i].GetComponent<SpriteRenderer>().color =
+                    drone.Fired ? paper : KindColor(UpgradeKind.Friend);
+                if (drone.Fired) ShowDroneShot(drone);
+            }
+            for (int i = 0; i < orbViews.Count; i++)
+            {
+                bool live = i < world.Orbs.Count;
+                orbViews[i].SetActive(live);
+                if (!live) continue;
+                Orb orb = world.Orbs[i];
+                orbViews[i].transform.position = new Vector3(orb.Position.x, orb.Position.y, 0);
+                orbViews[i].transform.rotation = Quaternion.Euler(0, 0, world.Time * 160);
+            }
+        }
+
+        /// <summary>Draws the drone's shot in the shape of the weapon it is copying.</summary>
+        private void ShowDroneShot(Drone drone)
+        {
+            // The arrow drone launches a real projectile, which is already drawn on its own.
+            if (weapon == WeaponId.Arrow) return;
+            var from = new Vector2(drone.Position.x, drone.Position.y);
+            var to = new Vector2(drone.LastTarget.x, drone.LastTarget.y);
+            Vector2 delta = to - from;
+            float thickness = weapon == WeaponId.Laser ? .16f : .09f;
+            GameObject fx = RectSprite("Drone shot", (from + to) / 2,
+                new Vector2(delta.magnitude, thickness), KindColor(UpgradeKind.Friend), 9);
+            fx.transform.rotation = Quaternion.Euler(0, 0, Mathf.Atan2(delta.y, delta.x) * Mathf.Rad2Deg);
+            transient.Add(fx);
+            transientEnds.Add(Time.unscaledTime + (weapon == WeaponId.Laser ? .14f : .09f));
+        }
+
         private void DrawBeam()
         {
             bool visible = started && !paused && world.LaserActive;
@@ -623,6 +683,8 @@ namespace PetThem.Game
             GUILayout.Space(12);
             GUILayout.Label(!started ? Texts.StartControls : Texts.EnemyLegend,body);
             GUILayout.Space(14);
+            // Once a run is under way, what was picked matters more than the control reminder.
+            if (started) { DrawBuild(); GUILayout.Space(14); }
             bool picking = !started || world.State != RunState.Playing;
             if (picking) DrawWeaponPicker();
             GUILayout.Space(14);
@@ -740,15 +802,81 @@ namespace PetThem.Game
             for (int i = 0; i < world.UpgradeChoices.Count; i++)
             {
                 UpgradeChoice choice = world.UpgradeChoices[i];
+                UpgradeKind kind = CombatWorld.KindOf(choice.Id);
+                Color accent = KindColor(kind);
                 float x = left + i * (cardWidth + gap);
+
                 Panel(new Rect(x,260,cardWidth,310),new Color32(34,57,65,255));
-                GUI.Label(new Rect(x+16,280,cardWidth-32,32),Texts.OptionRank(i+1, choice.Rank),small);
-                GUI.Label(new Rect(x+16,326,cardWidth-32,66),Texts.UpgradeTitle(choice.Id),heading);
-                GUI.Label(new Rect(x+16,396,cardWidth-32,100),Texts.UpgradeDescription(choice.Id),body);
-                if (GUI.Button(new Rect(x+16,508,cardWidth-32,46),Texts.PickOption(i+1),button))
+                // A colour strip down the side, so the three cards read as three kinds of choice
+                // before any of the text has been read.
+                Panel(new Rect(x,260,6,310),accent);
+
+                Color previous = GUI.color;
+                GUI.color = accent;
+                GUI.Label(new Rect(x+20,278,cardWidth-36,30),
+                    Texts.UpgradeKindName(kind) + "   " + Texts.RankDots(choice.Rank),small);
+                GUI.color = previous;
+
+                GUI.Label(new Rect(x+20,320,cardWidth-36,66),Texts.UpgradeTitle(choice.Id),heading);
+                GUI.Label(new Rect(x+20,386,cardWidth-36,120),Texts.UpgradeDescription(choice.Id),body);
+                if (GUI.Button(new Rect(x+20,508,cardWidth-40,46),Texts.PickOption(i+1),button))
                 { SelectUpgrade(i); break; }
             }
         }
+        private static Color KindColor(UpgradeKind kind)
+        {
+            switch (kind)
+            {
+                case UpgradeKind.Weapon: return new Color32(255, 168, 120, 255);
+                case UpgradeKind.Pet: return new Color32(124, 239, 192, 255);
+                case UpgradeKind.Friend: return new Color32(138, 200, 255, 255);
+                case UpgradeKind.Trigger: return new Color32(255, 212, 108, 255);
+                default: return new Color32(206, 176, 255, 255);
+            }
+        }
+
+        /// <summary>
+        /// The run so far: weapon, pet, level, and every upgrade taken, grouped by family.
+        /// </summary>
+        /// <remarks>
+        /// Shown on the pause screen because by the tenth level nobody remembers what they picked,
+        /// and the picks are the whole point of the level-up screen. Grouping keeps it readable as
+        /// the list grows; the ranks are dots rather than numbers so a glance is enough.
+        /// </remarks>
+        private void DrawBuild()
+        {
+            GUILayout.Label(Texts.BuildHeadline,small);
+            GUILayout.Label(Texts.BuildSummary(Texts.Weapon(weapon), Texts.Pet(petChoice), world.Level),
+                menuHeading);
+            GUILayout.Space(6);
+
+            var taken = world.TakenUpgrades();
+            if (taken.Count == 0) { GUILayout.Label(Texts.BuildEmpty,body); return; }
+
+            // One row per family. A run with two picks stays short; a long one still reads as a
+            // build rather than a list, because related picks sit together.
+            Color previous = GUI.color;
+            foreach (UpgradeKind kind in (UpgradeKind[])Enum.GetValues(typeof(UpgradeKind)))
+            {
+                var line = "";
+                foreach (UpgradeChoice choice in taken)
+                {
+                    if (CombatWorld.KindOf(choice.Id) != kind) continue;
+                    if (line.Length > 0) line += "    ";
+                    line += Texts.UpgradeTitle(choice.Id) + " " + Texts.RankDots(choice.Rank);
+                }
+                if (line.Length == 0) continue;
+
+                GUILayout.BeginHorizontal();
+                GUI.color = KindColor(kind);
+                GUILayout.Label(Texts.UpgradeKindName(kind),small,GUILayout.Width(70));
+                GUI.color = previous;
+                GUILayout.Label(line,body);
+                GUILayout.EndHorizontal();
+                GUILayout.Space(4);
+            }
+        }
+
         private static string FormatTime(float time) => ((int)time / 60).ToString("00") + ":" + ((int)time % 60).ToString("00");
     }
 }

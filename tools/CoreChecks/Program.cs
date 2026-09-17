@@ -162,7 +162,21 @@ Check("capped upgrades stay bounded and a fresh run resets growth", () =>
         True(world.UpgradeRank(UpgradeId.PetHaste) <= 5 && world.UpgradeRank(UpgradeId.PunchReach) <= 5);
     }
     True(world.Level == CombatWorld.MaxLevel && !world.HasUpgradeChoice);
-    True(world.UpgradeRank(UpgradeId.PetHaste) == 5);
+
+    // Reaching the cap through the cards alone depends on the draw, so the cap itself is checked
+    // directly: once an upgrade is at five it stops being offered.
+    var capped = ProgressionWorld();
+    for (int i = 0; i < 5; i++) True(capped.Apply(UpgradeId.PetHaste));
+    True(capped.UpgradeRank(UpgradeId.PetHaste) == 5);
+    for (int i = 0; i < 4000 && capped.Level < CombatWorld.MaxLevel; i++)
+    {
+        capped.Step(default);
+        if (!capped.HasUpgradeChoice) continue;
+        foreach (UpgradeChoice offer in capped.UpgradeChoices) True(offer.Id != UpgradeId.PetHaste);
+        capped.ChooseUpgrade(capped.UpgradeChoices[0].Id);
+    }
+    True(capped.UpgradeRank(UpgradeId.PetHaste) == 5);
+
     var fresh = ProgressionWorld();
     True(fresh.Level == 1 && fresh.Experience == 0 && !fresh.HasUpgradeChoice);
     Near(fresh.GetConfig().petCooldown, .01f);
@@ -176,11 +190,15 @@ Check("growth modifies this run only and health upgrades respect maximum health"
     while (world.Level < 8)
     {
         UntilChoice(world);
-        var choice = world.UpgradeChoices.FirstOrDefault(c => c.Id == UpgradeId.Vitality) ?? world.UpgradeChoices[0];
-        world.ChooseUpgrade(choice.Id);
+        world.ChooseUpgrade(world.UpgradeChoices[0].Id);
         True(world.Health <= world.MaxHealth);
     }
-    True(world.UpgradeRank(UpgradeId.Vitality) > 0);
+    // Applied directly: whether Vitality is ever offered depends on the draw, and the point here
+    // is what it does to maximum health, not how often it comes up.
+    True(world.Apply(UpgradeId.Vitality));
+    True(world.Apply(UpgradeId.Vitality));
+    True(world.Health <= world.MaxHealth);
+    True(world.UpgradeRank(UpgradeId.Vitality) == 2);
     Near(world.MaxHealth, config.playerHealth * (1 + .2f * world.UpgradeRank(UpgradeId.Vitality)));
     Near(config.playerHealth, 100); Near(config.petDamage, 1000);
     world.Abandon();
@@ -677,6 +695,223 @@ Check("the bow has to be drawn, and a longer pull makes a stronger shot", () =>
     Throws(() => new CombatWorld(new BalanceConfig { arrowMinPower = 0 }, 1));
     Throws(() => new CombatWorld(new BalanceConfig { arrowMinPower = 1.5f }, 1));
 });
+Check("drones copy the weapon the run started with", () =>
+{
+    foreach (WeaponId weapon in new[] { WeaponId.Punch, WeaponId.Arrow, WeaponId.Laser })
+    {
+        var world = Grown(weapon, UpgradeId.Drone, 2);
+        True(world.Drones.Count == 2);
+        True(world.Orbs.Count == 0);
+
+        int shots = 0, arrows = 0;
+        for (int i = 0; i < 600; i++)
+        {
+            world.Step(default);
+            shots += Count(world, "attack", "drone");
+            arrows += world.Projectiles.Count;
+        }
+        True(shots > 0);
+        // The arrow drone launches a real arrow; the other two hit at once.
+        if (weapon == WeaponId.Arrow) True(arrows > 0); else True(arrows == 0);
+    }
+
+    // No drone upgrade, no drones, and nothing fires.
+    var plain = Grown(WeaponId.Punch, UpgradeId.Vitality, 1);
+    for (int i = 0; i < 300; i++)
+    { plain.Step(default); True(Count(plain, "attack", "drone") == 0); }
+    True(plain.Drones.Count == 0);
+});
+Check("orbs circle the player and cannot grind one enemy every step", () =>
+{
+    var world = Grown(WeaponId.Punch, UpgradeId.Orbit, 3);
+    True(world.Orbs.Count == 3);
+
+    var hits = new Dictionary<int, List<int>>();
+    for (int i = 0; i < 900; i++)
+    {
+        world.Step(default);
+        foreach (CombatEvent e in world.Events)
+            if (e.type == "attack" && e.source == "orbit")
+            {
+                if (!hits.TryGetValue(e.targetId, out var ticks)) hits[e.targetId] = ticks = new List<int>();
+                ticks.Add(e.tick);
+            }
+    }
+    True(hits.Count > 0);
+    int recovery = (int)(world.GetConfig().orbitRecovery * 60) - 1;
+    foreach (var ticks in hits.Values)
+        for (int i = 1; i < ticks.Count; i++)
+            True(ticks[i] - ticks[i - 1] >= recovery);
+
+    // They keep station around the player rather than drifting off.
+    foreach (Orb orb in world.Orbs)
+        True((orb.Position - world.Position).Length <= world.GetConfig().orbitRadius + .01f);
+});
+Check("triggers fire on the event they belong to, and a blast cannot chain", () =>
+{
+    // Lifesteal tops the player back up on a kill, but never past the maximum. Compared against
+    // the identical run without it, because the player is taking damage the whole time too.
+    var steal = Grown(WeaponId.Punch, UpgradeId.Lifesteal, 3, hurt: true);
+    var noSteal = Grown(WeaponId.Punch, UpgradeId.Greed, 3, hurt: true);
+    int heals = 0;
+    for (int i = 0; i < 600; i++)
+    {
+        steal.Step(new PlayerInput(default, default, true));
+        noSteal.Step(new PlayerInput(default, default, true));
+        heals += Count(steal, "heal", "lifesteal");
+        True(steal.Health <= steal.MaxHealth + .001f);
+    }
+    True(heals > 0);
+    True(steal.Health > noSteal.Health);
+
+    // A blast goes off once per kill and does not set off another blast.
+    var blast = Grown(WeaponId.Punch, UpgradeId.Blast, 2);
+    for (int i = 0; i < 600; i++)
+    {
+        blast.Step(new PlayerInput(default, default, true));
+        int kills = Count(blast, "kill", "punch") + Count(blast, "kill", "pet")
+            + Count(blast, "kill", "blast") + Count(blast, "kill", "drone");
+        True(Count(blast, "attack", "blast") <= kills);
+    }
+
+    // Thorns hurt whatever touched the player. Run with health to spare: a hit that kills the
+    // player does not sting back, and that is the intended behaviour, not something to count.
+    var thorns = Grown(WeaponId.Punch, UpgradeId.Thorns, 2);
+    int stung = 0, touched = 0;
+    for (int i = 0; i < 900; i++)
+    {
+        thorns.Step(default);
+        stung += Count(thorns, "attack", "thorns");
+        foreach (CombatEvent e in thorns.Events) if (e.type == "hurt") touched++;
+    }
+    True(touched > 0 && stung == touched);
+    True(thorns.State == RunState.Playing);
+});
+Check("a critical hit is rolled on its own stream and never changes the run around it", () =>
+{
+    var crit = Grown(WeaponId.Punch, UpgradeId.Crit, 3);
+    int crits = 0, hits = 0;
+    for (int i = 0; i < 900; i++)
+    {
+        crit.Step(new PlayerInput(default, default, true));
+        foreach (CombatEvent e in crit.Events)
+        {
+            if (e.type != "damage") continue;
+            hits++;
+            if (e.source.EndsWith("_crit")) crits++;
+        }
+    }
+    True(hits > 0 && crits > 0 && crits < hits);
+
+    // Without the upgrade nothing crits at all.
+    var plain = Grown(WeaponId.Punch, UpgradeId.Vitality, 1);
+    for (int i = 0; i < 600; i++)
+    {
+        plain.Step(new PlayerInput(default, default, true));
+        foreach (CombatEvent e in plain.Events)
+            if (e.type == "damage") True(!e.source.EndsWith("_crit"));
+    }
+
+    // Same seed, same crits.
+    var a = Grown(WeaponId.Punch, UpgradeId.Crit, 3);
+    var b = Grown(WeaponId.Punch, UpgradeId.Crit, 3);
+    var json = new JsonSerializerOptions { IncludeFields = true };
+    for (int i = 0; i < 600; i++)
+    {
+        a.Step(new PlayerInput(default, default, true));
+        b.Step(new PlayerInput(default, default, true));
+        True(JsonSerializer.Serialize(a.Events, json) == JsonSerializer.Serialize(b.Events, json));
+    }
+});
+Check("an effect that kills several enemies at once does not corrupt the loop that caused it", () =>
+{
+    // A blast removes enemies other than the one being damaged. Every loop that deals damage
+    // while walking the enemy list has to survive that, for each weapon and for contact damage.
+    foreach (WeaponId weapon in new[] { WeaponId.Punch, WeaponId.Arrow, WeaponId.Laser })
+    {
+        var config = new BalanceConfig
+        {
+            playerHealth = 400, petRange = 100, petDamage = 200, petCooldown = .05f,
+            punchRange = 30, punchDamage = 200, punchCooldown = .05f,
+            arrowDamage = 200, arrowCooldown = .05f, arrowPierce = 12,
+            laserDamagePerSecond = 900, laserRange = 30, laserWidth = 8,
+            laserHeatPerSecond = .01f, laserCoolPerSecond = 100,
+            blastDamage = 400, blastRadius = 30,
+            orbitDamage = 200, orbitHitRadius = 6, orbitRecovery = .05f,
+            thornsDamage = 400, bossSpawnTime = 1000,
+            spawnInterval = .02f, minSpawnInterval = .02f,
+        };
+        var world = new CombatWorld(config, 3, true, weapon);
+        for (int i = 0; i < 400; i++) world.Step(default);
+        foreach (UpgradeId id in new[] { UpgradeId.Blast, UpgradeId.Orbit, UpgradeId.Thorns,
+                                         UpgradeId.Drone, UpgradeId.Crit })
+            for (int rank = 0; rank < 3; rank++) True(world.Apply(id));
+
+        // A wide blast on a packed arena: this is what used to run off the end of the list.
+        for (int i = 0; i < 1800 && world.State == RunState.Playing; i++)
+            world.Step(new PlayerInput(new Vec2(1, 0), new Vec2(1, 0), true, true));
+        True(world.Kills > 0);
+        foreach (Enemy enemy in world.Enemies) True(enemy.Health > 0);
+    }
+});
+Check("regen and greed change the numbers they claim to", () =>
+{
+    // The player is being hit at the same time, so this compares against the identical run
+    // without the upgrade rather than watching the health bar go up.
+    var regen = Grown(WeaponId.Punch, UpgradeId.Regen, 2, hurt: true);
+    var without = Grown(WeaponId.Punch, UpgradeId.Greed, 2, hurt: true);
+    int healed = 0;
+    for (int i = 0; i < 600; i++)
+    {
+        regen.Step(default);
+        without.Step(default);
+        healed += Count(regen, "heal", "regen");
+        True(regen.Health <= regen.MaxHealth + .001f);
+    }
+    True(healed > 0);
+    True(regen.State == RunState.Playing && without.State == RunState.Playing);
+    True(regen.Health > without.Health);
+
+    var plain = Grown(WeaponId.Punch, UpgradeId.Greed, 2);
+    True(plain.GetConfig().coinsPerKill > new BalanceConfig().coinsPerKill);
+    int coinsBefore = plain.Coins;
+    for (int i = 0; i < 300; i++) plain.Step(new PlayerInput(default, default, true));
+    True(plain.Coins > coinsBefore);
+});
+Check("every upgrade has a family, a cap policy, and shows up in the taken list", () =>
+{
+    var world = ProgressionWorld();
+    True(world.TakenUpgrades().Count == 0);
+
+    var seen = new HashSet<UpgradeKind>();
+    foreach (UpgradeId id in Enum.GetValues(typeof(UpgradeId))) seen.Add(CombatWorld.KindOf(id));
+    // Every family is actually used, so the level-up screen never has an empty group.
+    True(seen.Count == Enum.GetValues(typeof(UpgradeKind)).Length);
+
+    int levels = 0;
+    for (int i = 0; i < 20000 && levels < 10; i++)
+    {
+        world.Step(default);
+        if (!world.HasUpgradeChoice) continue;
+        world.ChooseUpgrade(world.UpgradeChoices[0].Id);
+        levels++;
+    }
+    True(levels == 10);
+
+    var taken = world.TakenUpgrades();
+    True(taken.Count > 0);
+    int total = 0;
+    foreach (UpgradeChoice choice in taken)
+    {
+        True(choice.Rank == world.UpgradeRank(choice.Id));
+        True(choice.Rank > 0);
+        if (CombatWorld.IsRankCapped(choice.Id)) True(choice.Rank <= 5);
+        total += choice.Rank;
+    }
+    True(total == levels);
+    // Sorted strongest first, so the pause screen reads as a build.
+    for (int i = 1; i < taken.Count; i++) True(taken[i - 1].Rank >= taken[i].Rank);
+});
 Check("every id the player can see is translated in every language", () =>
 {
     var languages = (Language[])Enum.GetValues(typeof(Language));
@@ -762,6 +997,25 @@ bool OtherPetUpgrade(UpgradeId id, PetId pet) =>
     (id == UpgradeId.PetReach && pet != PetId.Mochi)
     || (id == UpgradeId.PetChill && pet != PetId.Bori)
     || (id == UpgradeId.PetGuard && pet != PetId.Coco);
+
+// A run that already holds the given upgrade at the given rank, with enemies on the field.
+// `hurt` starts the player low on health so healing and contact effects have something to show.
+CombatWorld Grown(WeaponId weapon, UpgradeId id, int rank, bool hurt = false)
+{
+    var config = new BalanceConfig
+    {
+        playerHealth = hurt ? 400 : 100000,
+        petRange = .001f,
+        bossSpawnTime = 1000,
+        spawnInterval = .25f,
+        minSpawnInterval = .25f,
+    };
+    var world = new CombatWorld(config, 42, true, weapon);
+    for (int i = 0; i < 240; i++) world.Step(default);
+    for (int taken = 0; taken < rank; taken++) True(world.Apply(id));
+    True(world.UpgradeRank(id) == rank);
+    return world;
+}
 
 // Speed of an arrow loosed at the given pull, aimed away from the only enemy on the field.
 float ArrowSpeed(float draw)

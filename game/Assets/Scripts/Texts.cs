@@ -105,6 +105,14 @@ namespace PetThem.Game
                 case UpgradeId.MoveSpeed: return Pick("빠른 발", "QUICK PAWS");
                 case UpgradeId.Vitality: return Pick("커진 심장", "MORE HEART");
                 case UpgradeId.Heal: return Pick("잠깐 쉬기", "PET BREAK");
+                case UpgradeId.Drone: return Pick("꼬마 드론", "LITTLE DRONE");
+                case UpgradeId.Orbit: return Pick("맴도는 구슬", "SPINNING BEADS");
+                case UpgradeId.Crit: return Pick("급소 찌르기", "SWEET SPOT");
+                case UpgradeId.Blast: return Pick("펑 터짐", "GOES POP");
+                case UpgradeId.Lifesteal: return Pick("한 입 보충", "QUICK SNACK");
+                case UpgradeId.Thorns: return Pick("따끔한 털", "PRICKLY COAT");
+                case UpgradeId.Regen: return Pick("스르르 회복", "SLOW MEND");
+                case UpgradeId.Greed: return Pick("동전 욕심", "COIN GREED");
                 default: return id.ToString();
             }
         }
@@ -155,9 +163,55 @@ namespace PetThem.Game
                 case UpgradeId.Heal:
                     return Pick("지금 최대 체력의 40%를 회복합니다.",
                         "Restore 40% of your current max health.");
+                case UpgradeId.Drone:
+                    return Pick("드론이 하나 따라다니며\n당신이 고른 무기로 대신 쏩니다.\n최대 5기.",
+                        "A drone tags along and fires\nthe weapon you picked.\nUp to 5.");
+                case UpgradeId.Orbit:
+                    return Pick("구슬이 주위를 돌며\n스치는 적을 때립니다.\n최대 5개.",
+                        "A bead circles you and hits\nwhatever it brushes past.\nUp to 5.");
+                case UpgradeId.Crit:
+                    return Pick("가끔 급소에 맞아\n피해가 크게 늘어납니다.\n최대 5단계.",
+                        "Some hits land just right\nand hurt a lot more.\nUp to 5 ranks.");
+                case UpgradeId.Blast:
+                    return Pick("쓰러진 적이 터져서\n주변 적에게 피해를 줍니다.\n최대 5단계.",
+                        "A fallen enemy pops and\nhurts the ones around it.\nUp to 5 ranks.");
+                case UpgradeId.Lifesteal:
+                    return Pick("적을 쓰러뜨릴 때마다\n체력을 조금 회복합니다.\n최대 5단계.",
+                        "Every enemy you drop\ngives a little health back.\nUp to 5 ranks.");
+                case UpgradeId.Thorns:
+                    return Pick("당신을 건드린 적이\n대신 아파합니다.\n최대 5단계.",
+                        "Whatever touches you\ngets hurt for trying.\nUp to 5 ranks.");
+                case UpgradeId.Regen:
+                    return Pick("가만히 있어도\n체력이 천천히 찹니다.\n최대 5단계.",
+                        "Health creeps back up\non its own.\nUp to 5 ranks.");
+                case UpgradeId.Greed:
+                    return Pick("처치할 때 받는 코인이\n늘어납니다.\n최대 5단계.",
+                        "Each KO is worth\nmore coins.\nUp to 5 ranks.");
                 default: return id.ToString();
             }
         }
+
+        public static string UpgradeKindName(UpgradeKind kind)
+        {
+            switch (kind)
+            {
+                case UpgradeKind.Weapon: return Pick("무기", "WEAPON");
+                case UpgradeKind.Pet: return Pick("펫", "BUDDY");
+                case UpgradeKind.Friend: return Pick("동료", "FRIEND");
+                case UpgradeKind.Trigger: return Pick("발동", "TRIGGER");
+                case UpgradeKind.Body: return Pick("몸", "BODY");
+                default: return kind.ToString();
+            }
+        }
+
+        // Pause screen: what this run has become
+        public static string BuildHeadline => Pick("지금까지 고른 것", "WHAT YOU HAVE PICKED");
+        public static string BuildSummary(string weapon, string pet, int level) =>
+            Pick($"{weapon}  +  {pet}   /   레벨 {level}", $"{weapon}  +  {pet}   /   LEVEL {level}");
+        public static string BuildEmpty =>
+            Pick("아직 고른 강화가 없습니다. 적을 쓰러뜨리면 곧 고를 수 있습니다.",
+                "Nothing picked yet. Drop a few enemies and the first card comes up.");
+        public static string RankDots(int rank) => new string('●', rank) + new string('○', 5 - rank);
 
         // Heads-up display
         public static string Level(int level, bool maxed, int experience, int needed) =>
@@ -216,8 +270,8 @@ namespace PetThem.Game
         public static string Restart => Pick("처음부터", "RESTART");
         public static string Shop(int coins) => Pick($"상점  /  {coins}", $"SHOP  /  {coins}");
         public static string Back => Pick("< 뒤로", "< BACK");
-        public static string Build => Pick("프로토타입 0.10  /  무기 + 펫 + 보스 + 상점",
-            "PROTOTYPE 0.10  /  WEAPONS + BUDDIES + BOSS + SHOP");
+        public static string Build => Pick("프로토타입 0.11  /  강화 22종 + 무기 + 펫 + 보스",
+            "PROTOTYPE 0.11  /  22 UPGRADES + WEAPONS + BUDDIES + BOSS");
         public static string RunLog(string path) => Pick($"기록: {path}", $"Run log: {path}");
 
         // Level-up screen

@@ -91,9 +91,9 @@ namespace PetThem.Combat
             if (!input.punch || Tick < nextPunch) return;
             nextPunch = Tick + Frames(config.punchCooldown);
             Emit("attack", "punch", 0, 0, Facing);
-            for (int i = enemies.Count - 1; i >= 0; i--)
+            foreach (Enemy enemy in ScanEnemies(weaponScan))
             {
-                Enemy enemy = enemies[i];
+                if (!Alive(enemy)) continue;
                 Vec2 delta = enemy.Position - Position;
                 if (delta.Length <= config.punchRange + enemy.Radius &&
                     (delta.Length < 0.01f || Vec2.Dot(Facing, delta.Normalized) >= 0.15f))
@@ -173,9 +173,9 @@ namespace PetThem.Combat
             LaserEnd = Position + Facing * config.laserRange;
             float damage = config.laserDamagePerSecond * StepSeconds;
             bool reported = false;
-            for (int i = enemies.Count - 1; i >= 0; i--)
+            foreach (Enemy enemy in ScanEnemies(weaponScan))
             {
-                Enemy enemy = enemies[i];
+                if (!Alive(enemy)) continue;
                 if (!WithinBeam(enemy.Position, enemy.Radius)) continue;
                 if (!reported) { Emit("attack", "laser", 0, damage, Facing); reported = true; }
                 Damage(enemy, damage, "laser");
@@ -207,9 +207,10 @@ namespace PetThem.Combat
                     projectiles.RemoveAt(i);
                     continue;
                 }
-                for (int e = enemies.Count - 1; e >= 0 && arrow.PierceLeft > 0; e--)
+                foreach (Enemy enemy in ScanEnemies(weaponScan))
                 {
-                    Enemy enemy = enemies[e];
+                    if (arrow.PierceLeft <= 0) break;
+                    if (!Alive(enemy)) continue;
                     // An arrow may only count once per enemy, or a slow arrow would tick repeatedly.
                     if (arrow.Hit.Contains(enemy.Id)) continue;
                     if ((enemy.Position - arrow.Position).Length > config.arrowRadius + enemy.Radius) continue;
