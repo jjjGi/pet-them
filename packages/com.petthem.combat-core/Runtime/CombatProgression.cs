@@ -13,14 +13,19 @@ namespace PetThem.Combat
         MoveSpeed, Vitality, Heal,
     }
 
+    /// <summary>
+    /// One card on the level-up screen: which upgrade, and which rank it would become.
+    /// </summary>
+    /// <remarks>
+    /// Carries no display text. The wording belongs to whatever is showing it, so the shared
+    /// combat rules stay free of a user-facing language and the simulator does not link against
+    /// strings it will never print.
+    /// </remarks>
     public sealed class UpgradeChoice
     {
         public UpgradeId Id { get; }
-        public string Title { get; }
-        public string Description { get; }
         public int Rank { get; }
-        internal UpgradeChoice(UpgradeId id, string title, string description, int rank)
-        { Id = id; Title = title; Description = description; Rank = rank; }
+        internal UpgradeChoice(UpgradeId id, int rank) { Id = id; Rank = rank; }
     }
 
     public sealed partial class CombatWorld
@@ -95,7 +100,7 @@ namespace PetThem.Combat
                 progressionRandom ^= progressionRandom << 5;
                 int index = (int)(progressionRandom % (uint)pool.Count);
                 UpgradeId id = pool[index]; pool.RemoveAt(index);
-                upgradeChoices.Add(DescribeUpgrade(id));
+                upgradeChoices.Add(new UpgradeChoice(id, UpgradeRank(id) + 1));
                 Emit("upgrade_offer", id.ToString(), 0, UpgradeRank(id) + 1);
             }
         }
@@ -145,27 +150,5 @@ namespace PetThem.Combat
             return true;
         }
 
-        private UpgradeChoice DescribeUpgrade(UpgradeId id)
-        {
-            string title, description;
-            switch (id)
-            {
-                case UpgradeId.PunchPower: title = "HEAVY HANDS"; description = "Punch damage +20% of starting power."; break;
-                case UpgradeId.PunchReach: title = "BIG HIGH FIVE"; description = "Punch reach +10% of starting range.\nUp to 5 ranks."; break;
-                case UpgradeId.ArrowPower: title = "SHARP TIP"; description = "Arrow damage +22% of starting power."; break;
-                case UpgradeId.ArrowPierce: title = "THROUGH AND THROUGH"; description = "Each arrow pierces one more enemy.\nUp to 5 ranks."; break;
-                case UpgradeId.LaserPower: title = "HOT BEAM"; description = "Laser damage +18% of starting power per second."; break;
-                case UpgradeId.LaserCooling: title = "COOL HEAD"; description = "Laser heats 10% slower and cools faster.\nUp to 5 ranks."; break;
-                case UpgradeId.PetPower: title = "MOCHI MUSCLE"; description = "Mochi damage +25% of starting power."; break;
-                case UpgradeId.PetHaste: title = "EAGER BUDDY"; description = "Mochi attack interval -10% of starting interval.\nUp to 5 ranks."; break;
-                case UpgradeId.PetReach: title = "LONGER LEASH"; description = "Mochi reaches 12% further.\nUp to 5 ranks."; break;
-                case UpgradeId.PetChill: title = "COLD NOSE"; description = "Bori's chill is stronger and lasts longer.\nUp to 5 ranks."; break;
-                case UpgradeId.PetGuard: title = "SOFT PILLOW"; description = "Coco blocks more contact damage and heals more.\nUp to 5 ranks."; break;
-                case UpgradeId.MoveSpeed: title = "QUICK PAWS"; description = "Move speed +8% of starting speed.\nUp to 5 ranks."; break;
-                case UpgradeId.Vitality: title = "MORE HEART"; description = "Max health +20% of starting health.\nRestore the same amount now."; break;
-                default: title = "PET BREAK"; description = "Restore 40% of your current max health."; break;
-            }
-            return new UpgradeChoice(id, title, description, UpgradeRank(id) + 1);
-        }
     }
 }

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using PetThem.Combat;
+using PetThem.Game;
 
 int passed = 0;
 Check("reject invalid config and non-finite input", () =>
@@ -620,8 +621,77 @@ Check("a damaged save is repaired instead of breaking the game", () =>
     Throws(() => new CombatWorld(new BalanceConfig { boriPrice = 0 }, 1));
     Throws(() => new CombatWorld(new BalanceConfig { cocoPrice = float.NaN }, 1));
 });
+Check("every id the player can see is translated in every language", () =>
+{
+    var languages = (Language[])Enum.GetValues(typeof(Language));
+    True(languages.Length >= 2);
+
+    foreach (Language language in languages)
+    {
+        Texts.Use(language);
+        True(Texts.Current == language);
+
+        foreach (UpgradeId id in Enum.GetValues(typeof(UpgradeId)))
+        {
+            Translated(Texts.UpgradeTitle(id), id.ToString());
+            Translated(Texts.UpgradeDescription(id), id.ToString());
+        }
+        foreach (WeaponId id in Enum.GetValues(typeof(WeaponId)))
+        {
+            Translated(Texts.Weapon(id), id.ToString());
+            Translated(Texts.WeaponHint(id), id.ToString());
+        }
+        foreach (PetId id in Enum.GetValues(typeof(PetId)))
+        {
+            Translated(Texts.Pet(id), id.ToString());
+            Translated(Texts.PetRole(id), id.ToString());
+        }
+
+        // A sample of the screen text, so a language that is only half filled in is caught.
+        foreach (string line in new[]
+                 {
+                     Texts.StartHeadline, Texts.StartBlurb, Texts.StartControls, Texts.EnemyLegend,
+                     Texts.Play, Texts.TryAgain, Texts.Restart, Texts.Back, Texts.Build,
+                     Texts.ShopHeadline, Texts.ShopHint, Texts.Owned, Texts.Starter,
+                     Texts.LevelUpHeadline, Texts.LevelUpHint, Texts.MoveHint, Texts.Heat,
+                 })
+            True(!string.IsNullOrWhiteSpace(line));
+    }
+
+    // Two upgrades must never share a card title, or a choice is impossible to tell apart.
+    foreach (Language language in languages)
+    {
+        Texts.Use(language);
+        var titles = new List<string>();
+        foreach (UpgradeId id in Enum.GetValues(typeof(UpgradeId)))
+        {
+            string title = Texts.UpgradeTitle(id);
+            True(!titles.Contains(title));
+            titles.Add(title);
+        }
+    }
+
+    // The languages are actually different, so nothing was pasted into both columns.
+    Texts.Use(Language.Korean);
+    string korean = Texts.StartBlurb;
+    Texts.Use(Language.English);
+    True(Texts.StartBlurb != korean);
+    True(Texts.Next == Language.Korean);
+
+    Texts.UseSystemLanguage(true);
+    True(Texts.Current == Language.Korean);
+    Texts.UseSystemLanguage(false);
+    True(Texts.Current == Language.English);
+});
 Console.WriteLine(passed + " checks passed.");
 return;
+
+// A translation that fell through to the default case comes back as the raw enum name.
+void Translated(string text, string idName)
+{
+    True(!string.IsNullOrWhiteSpace(text));
+    True(text != idName);
+}
 
 // Mean distance from the player: a crowd that is slowed stays further out.
 float Spread(CombatWorld world)

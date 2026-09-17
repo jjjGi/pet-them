@@ -63,6 +63,7 @@ namespace PetThem.Game
             if (asset == null) throw new InvalidOperationException("Missing balance-default.json.");
             config = JsonUtility.FromJson<BalanceConfig>(asset.text);
             config.Validate();
+            Texts.UseSystemLanguage(Application.systemLanguage == SystemLanguage.Korean);
             profile = ProfileStore.Load();
             if (!profile.IsUnlocked(petChoice)) petChoice = PlayerProfile.StarterPet;
             CreateArena();
@@ -85,13 +86,13 @@ namespace PetThem.Game
             beam.SetActive(false);
             // The pet is rebuilt because its colour is part of telling the three apart.
             if (pet != null) Destroy(pet.gameObject);
-            pet = CreateCreature(PetName(petChoice), PetColor(petChoice), 0.55f, 11, true).transform;
+            pet = CreateCreature(petChoice.ToString(), PetColor(petChoice), 0.55f, 11, true).transform;
             world = new CombatWorld(config, unchecked(Environment.TickCount), true, weapon, petChoice);
             started = true; paused = false; shopOpen = false; accumulator = 0; hurtFlash = 0;
             ClearInput();
             recordingError = "";
             try { recorder = new RunRecorder(world); recordingPath = recorder.FilePath; }
-            catch (Exception ex) { recordingError = "Recording unavailable: " + ex.Message; Debug.LogWarning(recordingError); }
+            catch (Exception ex) { recordingError = Texts.RecordingUnavailable(ex.Message); Debug.LogWarning(recordingError); }
         }
 
         private void Update()
@@ -244,7 +245,7 @@ namespace PetThem.Game
         }
         private void DisableRecording(Exception ex)
         {
-            recordingError = "Recording stopped: " + ex.Message;
+            recordingError = Texts.RecordingStopped(ex.Message);
             Debug.LogWarning(recordingError);
             try { recorder?.Dispose(); } catch (Exception) { }
             recorder = null;
@@ -337,13 +338,6 @@ namespace PetThem.Game
         private Color PetColor(PetId id) =>
             id == PetId.Bori ? new Color32(138, 200, 255, 255) :
             id == PetId.Coco ? new Color32(255, 214, 150, 255) : mint;
-
-        private static string PetName(PetId id) => id.ToString().ToUpperInvariant();
-
-        private static string PetRole(PetId id) =>
-            id == PetId.Bori ? "chills and shoves what it bites" :
-            id == PetId.Coco ? "heals you and softens every hit" :
-            "hits hardest, no tricks";
 
         private static Color EnemyColor(EnemyKind kind)
         {
@@ -446,16 +440,38 @@ namespace PetThem.Game
             return Sprite.Create(texture,new Rect(0,0,size,size),new Vector2(.5f,.5f),size);
         }
 
+        /// <summary>
+        /// Builds the GUI styles, including a font that can actually draw the current language.
+        /// </summary>
+        /// <remarks>
+        /// IMGUI's built-in font has no Hangul, so Korean renders as empty boxes with it. A dynamic
+        /// OS font is used instead: the list is tried in order and the first one present wins, which
+        /// covers Windows, macOS and Android without shipping a font file we would have to license.
+        /// If none of them exist the built-in font is kept, and the game is readable in English.
+        /// </remarks>
         private void InitStyles()
         {
             if (body != null) return;
-            title = new GUIStyle(GUI.skin.label) { fontSize = 64, fontStyle = FontStyle.Bold };
+            Font glyphs = Font.CreateDynamicFontFromOSFont(new[]
+            {
+                "Malgun Gothic", "맑은 고딕",            // Windows
+                "Apple SD Gothic Neo", "AppleGothic",     // macOS and iOS
+                "Noto Sans CJK KR", "Noto Sans KR",       // Linux and newer Android
+                "NanumGothic", "NanumBarunGothic",
+                "Droid Sans Fallback", "DroidSansFallback", // older Android
+                "Arial",
+            }, 32);
+
+            title = new GUIStyle(GUI.skin.label) { fontSize = 56, fontStyle = FontStyle.Bold };
             heading = new GUIStyle(GUI.skin.label) { fontSize = 26, fontStyle = FontStyle.Bold };
             body = new GUIStyle(GUI.skin.label) { fontSize = 20, wordWrap = true };
             small = new GUIStyle(body) { fontSize = 15 };
             button = new GUIStyle(GUI.skin.button) { fontSize = 23, fontStyle = FontStyle.Bold };
+            if (glyphs != null)
+                title.font = heading.font = body.font = small.font = button.font = glyphs;
             title.normal.textColor = heading.normal.textColor = body.normal.textColor = paper;
             small.normal.textColor = mint;
+            button.normal.textColor = button.hover.textColor = button.active.textColor = paper;
         }
         private void Panel(Rect rect, Color color)
         { Color previous = GUI.color; GUI.color = color; GUI.DrawTexture(rect, Texture2D.whiteTexture); GUI.color = previous; }
@@ -466,40 +482,38 @@ namespace PetThem.Game
             float width = Screen.width / scale;
             GUI.matrix = Matrix4x4.Scale(new Vector3(scale,scale,1));
             Panel(new Rect(0,0,width,76),ink);
-            GUI.Label(new Rect(28,15,260,45),"PET THEM!",heading);
+            GUI.Label(new Rect(28,15,260,45),Texts.GameTitle,heading);
             GUI.Label(new Rect(width/2-100,13,240,45),FormatTime(world.Time) + " / 03:00",heading);
-            GUI.Label(new Rect(28,87,320,32),PetName(petChoice) + "  /  " + WeaponName(weapon),small);
+            GUI.Label(new Rect(28,87,360,32),Texts.Pet(petChoice) + "  /  " + Texts.Weapon(weapon),small);
             if (started)
             {
                 Panel(new Rect(28,48,220,9),new Color(.3f,.35f,.38f));
                 Panel(new Rect(28,48,220 * world.Health / world.MaxHealth,9),mint);
-                GUI.Label(new Rect(28,119,370,30),"LEVEL " + world.Level + (world.Level >= CombatWorld.MaxLevel ? "  /  MAX" :
-                    "  /  " + world.Experience + " / " + world.ExperienceToNextLevel + " XP"),small);
+                GUI.Label(new Rect(28,119,370,30),Texts.Level(world.Level, world.Level >= CombatWorld.MaxLevel,
+                    world.Experience, world.ExperienceToNextLevel),small);
                 Panel(new Rect(28,153,220,7),new Color(.3f,.35f,.38f));
                 Panel(new Rect(28,153,220 * (world.Level >= CombatWorld.MaxLevel ? 1 :
                     Mathf.Clamp01((float)world.Experience / world.ExperienceToNextLevel)),7),mint);
-                GUI.Label(new Rect(width-380,22,240,35),"WAVE " + world.Wave + "   /   " + world.Kills + " KOs",body);
-                if (world.State == RunState.Playing && GUI.Button(new Rect(width-110,15,88,43),paused ? "PLAY" : "II",button)) TogglePause();
+                GUI.Label(new Rect(width-380,22,240,35),Texts.WaveAndKills(world.Wave, world.Kills),body);
+                if (world.State == RunState.Playing && GUI.Button(new Rect(width-110,15,88,43),paused ? Texts.Resume : Texts.Pause,button)) TogglePause();
                 if (world.Boss != null)
                 {
-                    GUI.Label(new Rect(width/2-220,600,440,30),"BIG ONE  /  " +
-                        Mathf.CeilToInt(world.Boss.Health) + " HP",small);
+                    GUI.Label(new Rect(width/2-220,600,440,30),Texts.BossHealth(Mathf.CeilToInt(world.Boss.Health)),small);
                     Panel(new Rect(width/2-220,632,440,14),new Color(.3f,.35f,.38f));
                     Panel(new Rect(width/2-220,632,440 * world.Boss.Health / world.Boss.MaxHealth,14),
                         EnemyColor(EnemyKind.Boss));
                 }
                 else if (!world.BossDefeated && world.State == RunState.Playing)
                     GUI.Label(new Rect(width/2-140,600,300,30),
-                        "BIG ONE IN " + Mathf.CeilToInt(world.SecondsToBoss) + "s",small);
+                        Texts.BossIncoming(Mathf.CeilToInt(world.SecondsToBoss)),small);
                 if (world.GuardReduction > 0)
                     GUI.Label(new Rect(28,188,360,30),
-                        "COCO  /  -" + Mathf.RoundToInt(world.GuardReduction * 100) + "% contact   /   heal in " +
-                        Mathf.CeilToInt(world.SecondsToPetHeal) + "s",small);
-                GUI.Label(new Rect(28,666,400,30),"MOVE  /  WASD or left thumb",small);
-                GUI.Label(new Rect(width-460,666,440,30),WeaponName(weapon) + "  /  " + WeaponHint(weapon),small);
+                        Texts.GuardStatus(Mathf.RoundToInt(world.GuardReduction * 100), Mathf.CeilToInt(world.SecondsToPetHeal)),small);
+                GUI.Label(new Rect(28,666,400,30),Texts.MoveHint,small);
+                GUI.Label(new Rect(width-460,666,440,30),Texts.Weapon(weapon) + "  /  " + Texts.WeaponHint(weapon),small);
                 if (weapon == WeaponId.Laser)
                 {
-                    GUI.Label(new Rect(width-460,188,250,30),world.Overheated ? "OVERHEATED" : "HEAT",small);
+                    GUI.Label(new Rect(width-460,188,250,30),world.Overheated ? Texts.Overheated : Texts.Heat,small);
                     Panel(new Rect(width-460,222,220,9),new Color(.3f,.35f,.38f));
                     Panel(new Rect(width-460,222,220 * world.Heat / 100f,9),
                         world.Overheated ? coral : new Color(1,.68f,.36f));
@@ -524,29 +538,30 @@ namespace PetThem.Game
             {
                 Panel(new Rect(0,76,width,644),new Color(ink.r,ink.g,ink.b,.92f));
                 float left = width/2-340;
-                GUI.Label(new Rect(left,158,700,90),!started ? "PET THEM!" :
-                    paused && world.State == RunState.Playing ? "TAKE A BREATHER." :
-                    world.BossDefeated ? "BIG ONE DOWN!" :
-                    world.State == RunState.Won ? "NICE PETTING." : "ONE MORE PAT?",title);
-                GUI.Label(new Rect(left,265,680,90),!started ?
-                    "Survive 3 minutes. A big one shows up at 2:00.\nPick a weapon and a buddy, then one of 3 upgrades per level." :
-                    "Time " + FormatTime(world.Time) + "   /   " + world.Kills + " KOs   /   Wave " + world.Wave +
-                    "\n+" + lastRunCoins + " COINS" + (world.BossDefeated ? " (big one bonus)" : "") +
-                    "   /   " + profile.coins + " saved",heading);
+                GUI.Label(new Rect(left,158,700,90),!started ? Texts.StartHeadline :
+                    paused && world.State == RunState.Playing ? Texts.PausedHeadline :
+                    world.BossDefeated ? Texts.BossDownHeadline :
+                    world.State == RunState.Won ? Texts.WonHeadline : Texts.LostHeadline,title);
+                GUI.Label(new Rect(left,265,680,90),!started ? Texts.StartBlurb :
+                    Texts.RunResult(FormatTime(world.Time), world.Kills, world.Wave) + "\n" +
+                    Texts.CoinsEarned(lastRunCoins, world.BossDefeated, profile.coins),heading);
                 bool picking = !started || world.State != RunState.Playing;
-                GUI.Label(new Rect(left,370,680,90),!started ?
-                    "Move with your left thumb. The right side attacks.\nMochi attacks automatically.\nDesktop: WASD + mouse. SPACE auto-targets." :
-                    "Mint = Mochi. Coral = chaser. Gold = runner. Purple = brute, slow but heavy.\nPink = the big one. Take it down to end the run early.",body);
+                GUI.Label(new Rect(left,370,680,90),
+                    !started ? Texts.StartControls : Texts.EnemyLegend,body);
                 if (picking) DrawWeaponPicker(left);
-                string label = !started ? "LET'S PLAY  >" : paused && world.State == RunState.Playing ? "KEEP GOING  >" : "TRY AGAIN  >";
+                string label = !started ? Texts.Play :
+                    paused && world.State == RunState.Playing ? Texts.KeepGoing : Texts.TryAgain;
                 if (GUI.Button(new Rect(left,608,340,58),label,button))
                 { if (started && paused && world.State == RunState.Playing) TogglePause(); else StartRun(); }
                 if (started && paused && world.State == RunState.Playing &&
-                    GUI.Button(new Rect(left+360,608,220,58),"RESTART",button)) StartRun();
+                    GUI.Button(new Rect(left+360,608,220,58),Texts.Restart,button)) StartRun();
                 else if (picking && GUI.Button(new Rect(left+360,608,300,58),
-                    "SHOP  /  " + profile.coins,button)) shopOpen = true;
+                    Texts.Shop(profile.coins),button)) shopOpen = true;
+                // Switching language is one tap, so the wrong default is never a dead end.
+                if (GUI.Button(new Rect(width-190,608,160,58),Texts.LanguageName(Texts.Next),button))
+                    Texts.Use(Texts.Next);
                 GUI.Label(new Rect(left,676,680,44),recordingError.Length > 0 ? recordingError :
-                    started ? "Run log: " + recordingPath : "PROTOTYPE 0.6  /  WEAPONS + BUDDIES + BOSS + SHOP",small);
+                    started ? Texts.RunLog(recordingPath) : Texts.Build,small);
             }
         }
         /// <summary>
@@ -555,7 +570,7 @@ namespace PetThem.Game
         /// </summary>
         private void DrawWeaponPicker(float left)
         {
-            GUI.Label(new Rect(left,434,680,30),"MAIN WEAPON  /  pick one for the whole run",small);
+            GUI.Label(new Rect(left,434,680,30),Texts.WeaponPickerLabel,small);
             var weapons = new[] { WeaponId.Punch, WeaponId.Arrow, WeaponId.Laser };
             for (int i = 0; i < weapons.Length; i++)
             {
@@ -563,11 +578,11 @@ namespace PetThem.Game
                 Color previous = GUI.color;
                 GUI.color = chosen ? mint : new Color(1,1,1,.55f);
                 if (GUI.Button(new Rect(left + i * 190,464,178,44),
-                    (chosen ? "> " : "") + WeaponName(weapons[i]),button)) weapon = weapons[i];
+                    (chosen ? "> " : "") + Texts.Weapon(weapons[i]),button)) weapon = weapons[i];
                 GUI.color = previous;
             }
 
-            GUI.Label(new Rect(left,516,680,30),"BUDDY  /  " + PetRole(petChoice),small);
+            GUI.Label(new Rect(left,516,680,30),Texts.PetPickerLabel(petChoice),small);
             var pets = new[] { PetId.Mochi, PetId.Bori, PetId.Coco };
             for (int i = 0; i < pets.Length; i++)
             {
@@ -575,8 +590,8 @@ namespace PetThem.Game
                 bool chosen = petChoice == pets[i];
                 Color previous = GUI.color;
                 GUI.color = !owned ? new Color(1,1,1,.3f) : chosen ? PetColor(pets[i]) : new Color(1,1,1,.55f);
-                string label = owned ? (chosen ? "> " : "") + PetName(pets[i])
-                    : PetName(pets[i]) + "  " + PlayerProfile.PriceOf(pets[i], config);
+                string label = owned ? (chosen ? "> " : "") + Texts.Pet(pets[i])
+                    : Texts.Pet(pets[i]) + "  " + PlayerProfile.PriceOf(pets[i], config);
                 if (GUI.Button(new Rect(left + i * 190,546,178,44),label,button))
                 {
                     // A locked buddy sends the player to the shop rather than silently doing nothing.
@@ -594,11 +609,11 @@ namespace PetThem.Game
         {
             Panel(new Rect(0,76,width,644),new Color(ink.r,ink.g,ink.b,.97f));
             float left = 32;
-            GUI.Label(new Rect(left,120,width-64,50),"BUDDY SHOP",heading);
+            GUI.Label(new Rect(left,120,width-64,50),Texts.ShopHeadline,heading);
             GUI.Label(new Rect(left,176,width-64,40),
-                profile.coins + " COINS   /   " + profile.runsFinished + " runs finished",body);
+                Texts.ShopWallet(profile.coins, profile.runsFinished),body);
             GUI.Label(new Rect(left,220,width-64,34),
-                "Coins come from KOs, time survived and taking down the big one.",small);
+                Texts.ShopHint,small);
 
             var pets = new[] { PetId.Mochi, PetId.Bori, PetId.Coco };
             float gap = 16, cardWidth = (width - 64 - gap * 2) / 3;
@@ -612,48 +627,40 @@ namespace PetThem.Game
 
                 Color previous = GUI.color;
                 GUI.color = PetColor(id);
-                GUI.Label(new Rect(x+16,296,cardWidth-32,44),PetName(id),heading);
+                GUI.Label(new Rect(x+16,296,cardWidth-32,44),Texts.Pet(id),heading);
                 GUI.color = previous;
-                GUI.Label(new Rect(x+16,344,cardWidth-32,110),PetRole(id),body);
+                GUI.Label(new Rect(x+16,344,cardWidth-32,110),Texts.PetRole(id),body);
 
                 if (owned)
                     GUI.Label(new Rect(x+16,470,cardWidth-32,40),
-                        id == PlayerProfile.StarterPet ? "YOURS FROM THE START" : "OWNED",small);
+                        id == PlayerProfile.StarterPet ? Texts.Starter : Texts.Owned,small);
                 else if (profile.coins < price)
                     GUI.Label(new Rect(x+16,470,cardWidth-32,40),
-                        price + " COINS  /  " + (price - profile.coins) + " short",small);
-                else if (GUI.Button(new Rect(x+16,462,cardWidth-32,46),"UNLOCK  " + price,button))
+                        Texts.Short(price, price - profile.coins),small);
+                else if (GUI.Button(new Rect(x+16,462,cardWidth-32,46),Texts.Unlock(price),button))
                     Buy(id);
             }
 
-            if (GUI.Button(new Rect(left,596,300,58),"< BACK",button)) shopOpen = false;
+            if (GUI.Button(new Rect(left,596,300,58),Texts.Back,button)) shopOpen = false;
             GUI.Label(new Rect(left,668,width-64,40),
-                ProfileStore.Status.Length > 0 ? ProfileStore.Status : "Save: " + ProfileStore.FilePath,small);
+                ProfileStore.Status.Length > 0 ? ProfileStore.Status : Texts.SavePath(ProfileStore.FilePath),small);
         }
-
-        private static string WeaponName(WeaponId id) =>
-            id == WeaponId.Arrow ? "ARROW" : id == WeaponId.Laser ? "LASER" : "PUNCH";
-
-        private static string WeaponHint(WeaponId id) =>
-            id == WeaponId.Arrow ? "drag to aim, release to loose" :
-            id == WeaponId.Laser ? "hold to burn, watch the heat" :
-            "tap to swing, drag to aim";
 
         private void DrawUpgradeChoices(float width)
         {
             Panel(new Rect(0,76,width,644),new Color(ink.r,ink.g,ink.b,.97f));
             float left = 32, gap = 16, cardWidth = (width - 64 - gap * 2) / 3;
-            GUI.Label(new Rect(left,130,width-64,50),"LEVEL UP  /  CHOOSE YOUR NEXT PAT",heading);
-            GUI.Label(new Rect(left,187,width-64,50),"Combat is paused. Pick one card. Keyboard: 1 / 2 / 3.",body);
+            GUI.Label(new Rect(left,130,width-64,50),Texts.LevelUpHeadline,heading);
+            GUI.Label(new Rect(left,187,width-64,50),Texts.LevelUpHint,body);
             for (int i = 0; i < world.UpgradeChoices.Count; i++)
             {
                 UpgradeChoice choice = world.UpgradeChoices[i];
                 float x = left + i * (cardWidth + gap);
                 Panel(new Rect(x,260,cardWidth,310),new Color32(34,57,65,255));
-                GUI.Label(new Rect(x+16,280,cardWidth-32,32),"OPTION " + (i+1) + "  /  RANK " + choice.Rank,small);
-                GUI.Label(new Rect(x+16,326,cardWidth-32,66),choice.Title,heading);
-                GUI.Label(new Rect(x+16,396,cardWidth-32,100),choice.Description,body);
-                if (GUI.Button(new Rect(x+16,508,cardWidth-32,46),"PICK " + (i+1),button))
+                GUI.Label(new Rect(x+16,280,cardWidth-32,32),Texts.OptionRank(i+1, choice.Rank),small);
+                GUI.Label(new Rect(x+16,326,cardWidth-32,66),Texts.UpgradeTitle(choice.Id),heading);
+                GUI.Label(new Rect(x+16,396,cardWidth-32,100),Texts.UpgradeDescription(choice.Id),body);
+                if (GUI.Button(new Rect(x+16,508,cardWidth-32,46),Texts.PickOption(i+1),button))
                 { SelectUpgrade(i); break; }
             }
         }
