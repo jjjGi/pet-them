@@ -216,8 +216,8 @@ namespace PetThem.Game
         public static string Restart => Pick("처음부터", "RESTART");
         public static string Shop(int coins) => Pick($"상점  /  {coins}", $"SHOP  /  {coins}");
         public static string Back => Pick("< 뒤로", "< BACK");
-        public static string Build => Pick("프로토타입 0.6  /  무기 + 펫 + 보스 + 상점",
-            "PROTOTYPE 0.6  /  WEAPONS + BUDDIES + BOSS + SHOP");
+        public static string Build => Pick("프로토타입 0.8  /  무기 + 펫 + 보스 + 상점",
+            "PROTOTYPE 0.8  /  WEAPONS + BUDDIES + BOSS + SHOP");
         public static string RunLog(string path) => Pick($"기록: {path}", $"Run log: {path}");
 
         // Level-up screen

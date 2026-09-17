@@ -19,7 +19,6 @@ namespace PetThem.Game
         private BalanceConfig config;
         private RunRecorder recorder;
         private Camera gameCamera;
-        private Sprite circle, square;
         private Transform player, pet;
         private readonly Dictionary<int, GameObject> arrowViews = new Dictionary<int, GameObject>();
         private readonly List<int> staleArrows = new List<int>();
@@ -57,8 +56,6 @@ namespace PetThem.Game
             gameCamera.transform.position = new Vector3(0, 0, -10);
             gameCamera.clearFlags = CameraClearFlags.SolidColor;
             gameCamera.backgroundColor = ink;
-            circle = MakeCircle();
-            square = Sprite.Create(Texture2D.whiteTexture, new Rect(0, 0, 1, 1), new Vector2(.5f,.5f), 1);
             var asset = Resources.Load<TextAsset>("balance-default");
             if (asset == null) throw new InvalidOperationException("Missing balance-default.json.");
             config = JsonUtility.FromJson<BalanceConfig>(asset.text);
@@ -67,8 +64,8 @@ namespace PetThem.Game
             profile = ProfileStore.Load();
             if (!profile.IsUnlocked(petChoice)) petChoice = PlayerProfile.StarterPet;
             CreateArena();
-            player = CreateCreature("You", paper, 0.9f, 10, true).transform;
-            pet = CreateCreature("Mochi", mint, 0.55f, 11, true).transform;
+            player = Creature("You", Look.Player, 1.0f, 10).transform;
+            pet = Creature("Mochi", Look.Mochi, 0.62f, 11).transform;
             beam = RectSprite("Laser beam", Vector2.zero, Vector2.one, coral, 9);
             beam.SetActive(false);
             world = new CombatWorld(config, 42, true, weapon, petChoice);
@@ -86,7 +83,7 @@ namespace PetThem.Game
             beam.SetActive(false);
             // The pet is rebuilt because its colour is part of telling the three apart.
             if (pet != null) Destroy(pet.gameObject);
-            pet = CreateCreature(petChoice.ToString(), PetColor(petChoice), 0.55f, 11, true).transform;
+            pet = Creature(petChoice.ToString(), LookOf(petChoice), 0.62f, 11).transform;
             world = new CombatWorld(config, unchecked(Environment.TickCount), true, weapon, petChoice);
             started = true; paused = false; shopOpen = false; accumulator = 0; hurtFlash = 0;
             ClearInput();
@@ -124,7 +121,8 @@ namespace PetThem.Game
             player.position = new Vector3(world.Position.x, world.Position.y, 0);
             float orbit = world.Time * 2;
             pet.position = player.position + new Vector3(Mathf.Cos(orbit) * 1.1f, Mathf.Sin(orbit) * 0.75f, 0);
-            player.GetComponent<SpriteRenderer>().color = Time.unscaledTime < hurtFlash ? coral : paper;
+            // The sprite carries its own colour, so this tints rather than replaces it.
+            player.GetComponent<SpriteRenderer>().color = Time.unscaledTime < hurtFlash ? coral : Color.white;
             SynchronizeEnemies();
             SynchronizeArrows();
             DrawBeam();
@@ -260,8 +258,8 @@ namespace PetThem.Game
         private void OnDestroy()
         {
             EndRecording(true);
-            if (circle != null) { Destroy(circle.texture); Destroy(circle); }
-            if (square != null) Destroy(square);
+            Art.Release();
+
         }
 
         private void CreateArena()
@@ -282,32 +280,7 @@ namespace PetThem.Game
             go.transform.position = new Vector3(pos.x,pos.y,0);
             go.transform.localScale = new Vector3(size.x,size.y,1);
             var renderer = go.AddComponent<SpriteRenderer>();
-            renderer.sprite = square; renderer.color = color; renderer.sortingOrder = order;
-            return go;
-        }
-        private GameObject CreateCreature(string name, Color color, float size, int order, bool ears)
-        {
-            var go = new GameObject(name);
-            go.transform.SetParent(transform);
-            var renderer = go.AddComponent<SpriteRenderer>();
-            renderer.sprite = circle; renderer.color = color; renderer.sortingOrder = order;
-            go.transform.localScale = Vector3.one * size;
-            for (int side = -1; side <= 1; side += 2)
-            {
-                var eye = new GameObject("Eye");
-                eye.transform.SetParent(go.transform, false);
-                eye.transform.localPosition = new Vector3(side * .18f,.10f,0);
-                eye.transform.localScale = new Vector3(.09f,.14f,1);
-                var er = eye.AddComponent<SpriteRenderer>(); er.sprite = circle; er.color = ink; er.sortingOrder = order + 1;
-                if (ears)
-                {
-                    var ear = new GameObject("Ear");
-                    ear.transform.SetParent(go.transform, false);
-                    ear.transform.localPosition = new Vector3(side * .30f,.36f,0);
-                    ear.transform.localScale = new Vector3(.32f,.43f,1);
-                    var r = ear.AddComponent<SpriteRenderer>(); r.sprite = circle; r.color = color; r.sortingOrder = order - 1;
-                }
-            }
+            renderer.sprite = Art.Block; renderer.color = color; renderer.sortingOrder = order;
             return go;
         }
         private void SynchronizeEnemies()
@@ -324,31 +297,50 @@ namespace PetThem.Game
             {
                 if (!views.TryGetValue(enemy.Id, out GameObject view))
                 {
-                    view = CreateCreature(enemy.Kind.ToString(), EnemyColor(enemy.Kind),
-                        enemy.Radius * 2, enemy.Kind == EnemyKind.Boss ? 7 : 5, enemy.Kind == EnemyKind.Boss);
+                    view = Creature(enemy.Kind.ToString(), LookOf(enemy.Kind),
+                        enemy.Radius * 2.5f, enemy.Kind == EnemyKind.Boss ? 7 : 5);
                     views.Add(enemy.Id, view);
                 }
                 view.transform.position = new Vector3(enemy.Position.x,enemy.Position.y,0);
                 // A chilled enemy is tinted towards Bori's blue so the slow is visible.
+                // The sprite is already coloured, so a chilled enemy is tinted rather than recoloured.
                 view.GetComponent<SpriteRenderer>().color = enemy.Slowed
-                    ? Color.Lerp(EnemyColor(enemy.Kind), PetColor(PetId.Bori), .55f)
-                    : EnemyColor(enemy.Kind);
+                    ? Color.Lerp(Color.white, Art.ColorOf(Look.Bori), .5f)
+                    : Color.white;
             }
         }
-        private Color PetColor(PetId id) =>
-            id == PetId.Bori ? new Color32(138, 200, 255, 255) :
-            id == PetId.Coco ? new Color32(255, 214, 150, 255) : mint;
+        /// <summary>
+        /// One GameObject per creature. The face is baked into the sprite, so a hundred enemies
+        /// cost a hundred renderers instead of five hundred.
+        /// </summary>
+        private GameObject Creature(string name, Look look, float size, int order)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(transform);
+            go.transform.localScale = Vector3.one * size;
+            var renderer = go.AddComponent<SpriteRenderer>();
+            renderer.sprite = Art.Creature(look);
+            renderer.sortingOrder = order;
+            return go;
+        }
 
-        private static Color EnemyColor(EnemyKind kind)
+        private static Look LookOf(PetId id) =>
+            id == PetId.Bori ? Look.Bori : id == PetId.Coco ? Look.Coco : Look.Mochi;
+
+        private static Look LookOf(EnemyKind kind)
         {
             switch (kind)
             {
-                case EnemyKind.Runner: return new Color32(255, 203, 115, 255);
-                case EnemyKind.Brute: return new Color32(176, 124, 224, 255);
-                case EnemyKind.Boss: return new Color32(255, 92, 140, 255);
-                default: return new Color32(255, 119, 110, 255);
+                case EnemyKind.Runner: return Look.Runner;
+                case EnemyKind.Brute: return Look.Brute;
+                case EnemyKind.Boss: return Look.Boss;
+                default: return Look.Grunt;
             }
         }
+
+        private Color PetColor(PetId id) => Art.ColorOf(LookOf(id));
+
+        private static Color EnemyColor(EnemyKind kind) => Art.ColorOf(LookOf(kind));
 
         private void SynchronizeArrows()
         {
@@ -396,9 +388,9 @@ namespace PetThem.Game
                 var ring = new GameObject("Heal");
                 ring.transform.SetParent(transform);
                 ring.transform.position = new Vector3(e.x, e.y, 0);
-                ring.transform.localScale = Vector3.one * 2.2f;
+                ring.transform.localScale = Vector3.one * 3.5f;
                 var hr = ring.AddComponent<SpriteRenderer>();
-                hr.sprite = circle;
+                hr.sprite = Art.Ring;
                 hr.color = new Color(PetColor(PetId.Coco).r, PetColor(PetId.Coco).g, PetColor(PetId.Coco).b, .35f);
                 hr.sortingOrder = 9;
                 transient.Add(ring); transientEnds.Add(Time.unscaledTime + .35f);
@@ -412,10 +404,11 @@ namespace PetThem.Game
             {
                 fx = new GameObject("Punch");
                 fx.transform.SetParent(transform);
-                fx.transform.position = player.position + new Vector3(e.x,e.y,0) * world.PunchRange * .6f;
-                fx.transform.localScale = Vector3.one * world.PunchRange;
-                var r = fx.AddComponent<SpriteRenderer>(); r.sprite = circle;
-                r.color = new Color(mint.r,mint.g,mint.b,.3f); r.sortingOrder = 8;
+                fx.transform.position = player.position + new Vector3(e.x,e.y,0) * world.PunchRange * .5f;
+                // The ring sits at 0.4 of the sprite, so this draws it at the real punch reach.
+                fx.transform.localScale = Vector3.one * (world.PunchRange / .4f);
+                var r = fx.AddComponent<SpriteRenderer>(); r.sprite = Art.Ring;
+                r.color = new Color(mint.r,mint.g,mint.b,.45f); r.sortingOrder = 8;
             }
             else
             {
@@ -426,20 +419,6 @@ namespace PetThem.Game
             }
             transient.Add(fx); transientEnds.Add(Time.unscaledTime + .12f);
         }
-        private static Sprite MakeCircle()
-        {
-            const int size = 64;
-            var texture = new Texture2D(size,size,TextureFormat.RGBA32,false);
-            var pixels = new Color[size * size];
-            for (int y = 0; y < size; y++) for (int x = 0; x < size; x++)
-            {
-                float distance = Vector2.Distance(new Vector2(x+.5f,y+.5f),new Vector2(size/2f,size/2f));
-                pixels[y * size+x] = new Color(1,1,1,Mathf.Clamp01(size/2f-distance));
-            }
-            texture.SetPixels(pixels); texture.Apply(); texture.filterMode = FilterMode.Bilinear;
-            return Sprite.Create(texture,new Rect(0,0,size,size),new Vector2(.5f,.5f),size);
-        }
-
         /// <summary>
         /// Builds the GUI styles, including a font that can actually draw the current language.
         /// </summary>
@@ -523,10 +502,10 @@ namespace PetThem.Game
                     Vector2 anchor = new Vector2(moveAnchor.x / scale,(Screen.height-moveAnchor.y)/scale);
                     Vector2 stick = new Vector2(movePoint.x / scale,(Screen.height-movePoint.y)/scale);
                     GUI.color = new Color(mint.r,mint.g,mint.b,.2f);
-                    GUI.DrawTexture(new Rect(anchor.x-64,anchor.y-64,128,128),circle.texture);
+                    GUI.DrawTexture(new Rect(anchor.x-64,anchor.y-64,128,128),Art.SoftCircle.texture);
                     GUI.color = mint;
                     Vector2 delta = Vector2.ClampMagnitude(stick-anchor,64);
-                    GUI.DrawTexture(new Rect(anchor.x+delta.x-22,anchor.y+delta.y-22,44,44),circle.texture);
+                    GUI.DrawTexture(new Rect(anchor.x+delta.x-22,anchor.y+delta.y-22,44,44),Art.SoftCircle.texture);
                     GUI.color = Color.white;
                 }
             }
