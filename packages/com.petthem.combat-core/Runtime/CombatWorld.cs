@@ -50,6 +50,14 @@ namespace PetThem.Combat
         // Boss: one per run, arrives late. Killing it ends the run early as a win.
         public float bossSpawnTime = 120, bossHealth = 1800, bossSpeed = 1.05f;
         public float bossContactDamage = 26, bossRadius = 1.9f;
+        // Boss moves. Every one is announced first: bossTelegraph seconds of winding up, standing
+        // still, so the player is told what is coming and has time to answer it.
+        public float bossMoveInterval = 4.5f, bossTelegraph = 0.85f;
+        public float bossChargeSpeed = 11, bossChargeSeconds = 0.8f, bossChargeDamage = 38;
+        public float bossSlamRadius = 4.2f, bossSlamDamage = 32;
+        public int bossSummonCount = 4;
+        // Below this share of its health the boss stops pausing as long between moves.
+        public float bossEnrageHealth = 0.35f, bossEnrageHaste = 0.62f;
         // Run reward. Spent in the shop between runs, which is not built yet.
         public float coinsPerKill = 1, coinsPerBossKill = 150, coinsPerSecondSurvived = 0.5f;
         // Pets. Mochi uses petDamage as it is; the other two trade damage for their own effect.
@@ -81,6 +89,8 @@ namespace PetThem.Combat
                 laserHeatPerSecond, laserCoolPerSecond, laserOverheatPenalty,
                 bruteHealth, bruteSpeed, bruteContactDamage,
                 bossSpawnTime, bossHealth, bossSpeed, bossContactDamage, bossRadius,
+                bossMoveInterval, bossTelegraph, bossChargeSpeed, bossChargeSeconds,
+                bossChargeDamage, bossSlamRadius, bossSlamDamage, bossEnrageHaste,
                 petSlowSeconds, petControlKnockback, petHealInterval, petHealAmount })
                 if (!Vec2.Finite(value) || value <= 0) throw new ArgumentException("Balance values must be finite and positive.");
             foreach (float share in new[] { petControlDamageShare, petSupportDamageShare, petSlowFactor })
@@ -102,6 +112,12 @@ namespace PetThem.Combat
             if (!Vec2.Finite(critChance) || critChance <= 0 || critChance > 1)
                 throw new ArgumentException("critChance must be above 0 and at most 1.");
             if (critMultiplier < 1) throw new ArgumentException("critMultiplier must be at least 1.");
+            if (bossSummonCount < 0 || bossSummonCount > 20)
+                throw new ArgumentException("bossSummonCount must be between 0 and 20.");
+            if (!Vec2.Finite(bossEnrageHealth) || bossEnrageHealth < 0 || bossEnrageHealth >= 1)
+                throw new ArgumentException("bossEnrageHealth must be at least 0 and below 1.");
+            if (bossTelegraph >= bossMoveInterval)
+                throw new ArgumentException("bossTelegraph must be shorter than bossMoveInterval.");
             if (!Vec2.Finite(bruteShare) || bruteShare < 0 || bruteShare > 0.9f)
                 throw new ArgumentException("bruteShare must be between 0 and 0.9.");
             if (maxEnemies < 1 || maxEnemies > 1000 || minSpawnInterval > spawnInterval ||
@@ -207,6 +223,8 @@ namespace PetThem.Combat
             if (progressionRandom == 0) progressionRandom = 1;
             effectRandom = unchecked((uint)seed) ^ 0x2545f491;
             if (effectRandom == 0) effectRandom = 0x6c078965;
+            bossRandom = unchecked((uint)seed) ^ 0x7f4a7c15;
+            if (bossRandom == 0) bossRandom = 0x1b873593;
             droneView = drones.AsReadOnly();
             orbView = orbs.AsReadOnly();
             Seed = seed;
@@ -242,6 +260,7 @@ namespace PetThem.Combat
             // Killing the boss ends the run inside the attack above, so nothing after it may act.
             if (State == RunState.Playing) StepPet();
             if (State == RunState.Playing) StepCompanions();
+            if (State == RunState.Playing) StepBoss();
 
             // Walked as a copy: thorns can kill the enemy being handled, and its blast can take
             // several more with it.
@@ -249,9 +268,14 @@ namespace PetThem.Combat
             {
                 if (State != RunState.Playing) break;
                 if (enemy.Health <= 0) continue;
-                Vec2 delta = Position - enemy.Position;
-                float travel = Math.Min(delta.Length, SpeedOf(enemy) * StepSeconds);
-                enemy.Position += delta.Normalized * travel;
+                // A winding-up or charging boss moves on its own terms, not towards the player.
+                bool selfDriven = enemy == Boss && BossState != BossAction.Stalk;
+                if (!selfDriven)
+                {
+                    Vec2 delta = Position - enemy.Position;
+                    float travel = Math.Min(delta.Length, SpeedOf(enemy) * StepSeconds);
+                    enemy.Position += delta.Normalized * travel;
+                }
                 // A bigger body reaches the player from further out.
                 if ((enemy.Position - Position).Length <= 0.35f + enemy.Radius && Tick >= nextHurt)
                 {
@@ -299,11 +323,20 @@ namespace PetThem.Combat
             EnemyKind kind = roll < 0.28f ? EnemyKind.Runner
                 : roll < 0.28f + config.bruteShare ? EnemyKind.Brute
                 : EnemyKind.Grunt;
+            SpawnAt(kind, position, "wave");
+        }
+
+        /// <summary>Places one enemy. Shared by the wave timer and by the boss's summon.</summary>
+        private Enemy SpawnAt(EnemyKind kind, Vec2 position, string source)
+        {
             float health = HealthOf(kind) * (1 + (wave - 1) * 0.12f);
             var enemy = new Enemy { Id = nextId++, Kind = kind, Health = health, MaxHealth = health,
                 Position = position, Radius = RadiusOf(kind) };
             enemies.Add(enemy);
+            // The source says where it came from: a summoned enemy is not a wave spawn.
             Emit("spawn", kind.ToString(), enemy.Id, health, position);
+            if (source != "wave") Emit("summon", kind.ToString(), enemy.Id, health, position);
+            return enemy;
         }
         private Enemy Nearest(float range)
         {

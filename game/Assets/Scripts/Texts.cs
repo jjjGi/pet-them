@@ -44,7 +44,7 @@ namespace PetThem.Game
         /// The one place the build number lives. The editor stamps the Android package with it and
         /// the menu prints it, so the version on the phone and the version on screen cannot drift.
         /// </summary>
-        public const string Version = "0.11.1";
+        public const string Version = "0.12.0";
 
         public static string Weapon(WeaponId id)
         {
@@ -236,6 +236,20 @@ namespace PetThem.Game
 
         public static string BossHealth(int health) => Pick($"큰 놈  /  {health} HP", $"BIG ONE  /  {health} HP");
         public static string BossIncoming(int seconds) => Pick($"{seconds}초 뒤 큰 놈", $"BIG ONE IN {seconds}s");
+
+        /// <summary>Names the move the boss is winding up, so the shape on the ground has a word for it.</summary>
+        public static string BossMove(BossAction move)
+        {
+            switch (move)
+            {
+                case BossAction.Charge: return Pick("돌진!", "CHARGE!");
+                case BossAction.Slam: return Pick("내려찍기!", "SLAM!");
+                case BossAction.Summon: return Pick("부른다!", "CALLING!");
+                default: return move.ToString();
+            }
+        }
+
+        public static string BossEnraged => Pick("격노", "ENRAGED");
         public static string GuardStatus(int percent, int seconds) =>
             Pick($"코코  /  피해 -{percent}%   /   {seconds}초 뒤 회복",
                 $"COCO  /  -{percent}% contact   /   heal in {seconds}s");
@@ -277,8 +291,8 @@ namespace PetThem.Game
         public static string Shop(int coins) => Pick($"상점  /  {coins}", $"SHOP  /  {coins}");
         public static string Back => Pick("< 뒤로", "< BACK");
         public static string Build => Pick(
-            $"프로토타입 {Version}  /  강화 22종 + 무기 + 펫 + 보스",
-            $"PROTOTYPE {Version}  /  22 UPGRADES + WEAPONS + BUDDIES + BOSS");
+            $"프로토타입 {Version}  /  강화 22종 + 무기 + 펫 + 보스 패턴",
+            $"PROTOTYPE {Version}  /  22 UPGRADES + WEAPONS + BUDDIES + BOSS PATTERNS");
         public static string RunLog(string path) => Pick($"기록: {path}", $"Run log: {path}");
 
         // Level-up screen

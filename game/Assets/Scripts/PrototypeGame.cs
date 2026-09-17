@@ -24,7 +24,7 @@ namespace PetThem.Game
         private readonly List<int> staleArrows = new List<int>();
         private readonly List<GameObject> droneViews = new List<GameObject>();
         private readonly List<GameObject> orbViews = new List<GameObject>();
-        private GameObject beam;
+        private GameObject beam, bossWarning;
         private WeaponId weapon = WeaponId.Punch;
         private PetId petChoice = PetId.Mochi;
         private PlayerProfile profile;
@@ -73,6 +73,9 @@ namespace PetThem.Game
             pet = Creature("Mochi", Look.Mochi, 0.62f, 11).transform;
             beam = RectSprite("Laser beam", Vector2.zero, Vector2.one, coral, 9);
             beam.SetActive(false);
+            // Under the creatures, so the warning never hides what is standing on it.
+            bossWarning = RectSprite("Boss warning", Vector2.zero, Vector2.one, coral, 2);
+            bossWarning.SetActive(false);
             world = new CombatWorld(config, 42, true, weapon, petChoice);
         }
 
@@ -90,6 +93,7 @@ namespace PetThem.Game
             foreach (var view in transient) Destroy(view);
             transient.Clear(); transientEnds.Clear();
             beam.SetActive(false);
+            bossWarning.SetActive(false);
             // The pet is rebuilt because its colour is part of telling the three apart.
             if (pet != null) Destroy(pet.gameObject);
             pet = Creature(petChoice.ToString(), LookOf(petChoice), 0.62f, 11).transform;
@@ -136,6 +140,7 @@ namespace PetThem.Game
             SynchronizeArrows();
             SynchronizeCompanions();
             DrawBeam();
+            DrawBossWarning();
             for (int i = transient.Count - 1; i >= 0; i--)
                 if (Time.unscaledTime >= transientEnds[i])
                 { Destroy(transient[i]); transient.RemoveAt(i); transientEnds.RemoveAt(i); }
@@ -468,6 +473,50 @@ namespace PetThem.Game
             transientEnds.Add(Time.unscaledTime + (weapon == WeaponId.Laser ? .14f : .09f));
         }
 
+        /// <summary>
+        /// Draws what the boss is about to do, while it is winding up.
+        /// </summary>
+        /// <remarks>
+        /// The core gives the player most of a second of warning before every boss move. If the
+        /// warning is not on screen that second is worth nothing, so this is not decoration: a
+        /// charge shows the lane it will run down, a slam shows the circle it will cover, and both
+        /// fill up as the wind-up finishes.
+        /// </remarks>
+        private void DrawBossWarning()
+        {
+            bool winding = world.Boss != null && world.BossState == BossAction.Telegraph;
+            bossWarning.SetActive(winding);
+            if (!winding) return;
+
+            var at = new Vector2(world.Boss.Position.x, world.Boss.Position.y);
+            float grow = Mathf.Clamp01(world.BossTelegraph);
+            var renderer = bossWarning.GetComponent<SpriteRenderer>();
+            Color danger = EnemyColor(EnemyKind.Boss);
+            renderer.color = new Color(danger.r, danger.g, danger.b, Mathf.Lerp(.15f, .5f, grow));
+
+            if (world.BossMove == BossAction.Charge)
+            {
+                // The lane it will cover, reaching further the closer it is to launching.
+                float reach = config.bossChargeSpeed * config.bossChargeSeconds;
+                var heading = new Vector2(world.BossHeading.x, world.BossHeading.y);
+                renderer.sprite = Art.Block;
+                bossWarning.transform.position = at + heading * (reach * .5f);
+                bossWarning.transform.localScale =
+                    new Vector3(reach * grow, config.bossRadius * 1.6f, 1);
+                bossWarning.transform.rotation =
+                    Quaternion.Euler(0, 0, Mathf.Atan2(heading.y, heading.x) * Mathf.Rad2Deg);
+                return;
+            }
+
+            // Slam and summon both go off around the boss, so both show a circle.
+            float radius = world.BossMove == BossAction.Slam
+                ? config.bossSlamRadius : config.bossRadius + 1.6f;
+            renderer.sprite = Art.SoftCircle;
+            bossWarning.transform.position = at;
+            bossWarning.transform.localScale = Vector3.one * (radius * 2 * Mathf.Lerp(.35f, 1, grow));
+            bossWarning.transform.rotation = Quaternion.identity;
+        }
+
         private void DrawBeam()
         {
             bool visible = started && !paused && world.LaserActive;
@@ -672,10 +721,15 @@ namespace PetThem.Game
                 if (world.State == RunState.Playing && GUI.Button(new Rect(width-110,15,88,43),paused ? Texts.Resume : Texts.Pause,button)) TogglePause();
                 if (world.Boss != null)
                 {
-                    GUI.Label(new Rect(width/2-220,600,440,30),Texts.BossHealth(Mathf.CeilToInt(world.Boss.Health)),small);
+                    string bossLabel = Texts.BossHealth(Mathf.CeilToInt(world.Boss.Health));
+                    if (world.BossEnraged) bossLabel += "  /  " + Texts.BossEnraged;
+                    GUI.Label(new Rect(width/2-220,600,440,30),bossLabel,small);
                     Panel(new Rect(width/2-220,632,440,14),new Color(.3f,.35f,.38f));
                     Panel(new Rect(width/2-220,632,440 * world.Boss.Health / world.Boss.MaxHealth,14),
                         EnemyColor(EnemyKind.Boss));
+                    // The shape on the ground says where; this says what, for the second it winds up.
+                    if (world.BossState == BossAction.Telegraph)
+                        GUI.Label(new Rect(width/2-220,558,440,34),Texts.BossMove(world.BossMove),body);
                 }
                 else if (!world.BossDefeated && world.State == RunState.Playing)
                     GUI.Label(new Rect(width/2-140,600,300,30),

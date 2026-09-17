@@ -854,6 +854,125 @@ Check("an effect that kills several enemies at once does not corrupt the loop th
         foreach (Enemy enemy in world.Enemies) True(enemy.Health > 0);
     }
 });
+Check("every boss move is announced before it lands", () =>
+{
+    var config = new BalanceConfig
+    {
+        playerHealth = 100000, petRange = .001f, duration = 600,
+        bossSpawnTime = 1, bossHealth = 1000000, bossMoveInterval = 1.2f, bossTelegraph = .4f,
+        spawnInterval = 3, minSpawnInterval = 3,
+    };
+    var world = new CombatWorld(config, 5);
+    for (int i = 0; i < 120; i++) world.Step(default);
+    True(world.Boss != null);
+
+    var announced = new List<string>();
+    var performed = new List<string>();
+    var announcedAt = new Dictionary<string, int>();
+    int hurtWithoutWarning = 0;
+    // A charge keeps travelling after it is unleashed, so its damage arrives well after the
+    // announcement. What matters is that the warning came first and lasted its full length.
+    int windUp = (int)(config.bossTelegraph * 60) - 1;
+
+    for (int i = 0; i < 60 * 90; i++)
+    {
+        world.Step(default);
+        foreach (CombatEvent e in world.Events)
+        {
+            if (e.type == "boss_telegraph") { announced.Add(e.source); announcedAt[e.source] = e.tick; }
+            if (e.type == "boss_move") performed.Add(e.source);
+            // Contact damage needs no warning; a move does.
+            if (e.type != "hurt") continue;
+            if (e.source != nameof(BossAction.Charge) && e.source != nameof(BossAction.Slam)) continue;
+            if (!announcedAt.TryGetValue(e.source, out int at) || e.tick - at < windUp)
+                hurtWithoutWarning++;
+        }
+    }
+
+    True(announced.Count > 0 && performed.Count > 0);
+    True(hurtWithoutWarning == 0);
+    // All three moves turn up over ninety seconds, so none of them is unreachable.
+    foreach (string move in new[] { nameof(BossAction.Charge), nameof(BossAction.Slam),
+                                    nameof(BossAction.Summon) })
+        True(performed.Contains(move));
+    // Every move that landed was announced first.
+    True(performed.Count <= announced.Count);
+});
+Check("a charge is aimed when it winds up, so stepping aside works", () =>
+{
+    var config = new BalanceConfig
+    {
+        playerHealth = 100000, petRange = .001f, duration = 600,
+        bossSpawnTime = 1, bossHealth = 1000000, bossMoveInterval = 1.2f, bossTelegraph = .5f,
+        bossSummonCount = 0, spawnInterval = 100, minSpawnInterval = 100,
+    };
+    var world = new CombatWorld(config, 9);
+    for (int i = 0; i < 120; i++) world.Step(default);
+
+    // Wait for a charge to be announced, then note where it was aimed.
+    Vec2 aimed = default;
+    bool found = false;
+    for (int i = 0; i < 60 * 60 && !found; i++)
+    {
+        world.Step(default);
+        foreach (CombatEvent e in world.Events)
+            if (e.type == "boss_telegraph" && e.source == nameof(BossAction.Charge))
+            { aimed = world.BossHeading; found = true; }
+    }
+    True(found);
+    True(Math.Abs(aimed.Length - 1) < .01f);
+
+    // The wind-up is visible the whole way through, and the boss holds still for it.
+    True(world.BossState == BossAction.Telegraph);
+    Vec2 stoodAt = world.Boss.Position;
+    float lastProgress = -1;
+    while (world.BossState == BossAction.Telegraph)
+    {
+        True(world.BossTelegraph >= lastProgress - .001f);
+        lastProgress = world.BossTelegraph;
+        True((world.Boss.Position - stoodAt).Length < .01f);
+        world.Step(default);
+    }
+    True(lastProgress > .5f);
+
+    // The direction does not follow the player once the charge is under way.
+    True(world.BossState == BossAction.Charge);
+    for (int i = 0; i < 20 && world.BossState == BossAction.Charge; i++)
+    {
+        world.Step(new PlayerInput(new Vec2(0, 1), default, false));
+        True((world.BossHeading - aimed).Length < .001f);
+    }
+});
+Check("the boss speeds up when hurt and its summons are counted as summons", () =>
+{
+    var config = new BalanceConfig
+    {
+        playerHealth = 100000, petRange = .001f, duration = 600,
+        bossSpawnTime = 1, bossHealth = 400, bossEnrageHealth = .5f,
+        punchDamage = 20, punchRange = 40, punchCooldown = .4f,
+        bossSummonCount = 3, spawnInterval = 100, minSpawnInterval = 100,
+    };
+    var world = new CombatWorld(config, 4);
+    for (int i = 0; i < 120; i++) world.Step(default);
+    True(world.Boss != null && !world.BossEnraged);
+
+    int summoned = 0;
+    bool sawEnraged = false;
+    for (int i = 0; i < 60 * 60 && world.State == RunState.Playing; i++)
+    {
+        world.Step(new PlayerInput(default, default, true));
+        summoned += Count(world, "summon", nameof(EnemyKind.Runner));
+        if (world.BossEnraged) sawEnraged = true;
+    }
+    True(sawEnraged);
+    True(summoned > 0 && summoned % config.bossSummonCount == 0);
+    // Killing it still ends the run, patterns or not.
+    True(world.BossDefeated && world.State == RunState.Won);
+
+    Throws(() => new CombatWorld(new BalanceConfig { bossTelegraph = 9, bossMoveInterval = 2 }, 1));
+    Throws(() => new CombatWorld(new BalanceConfig { bossSummonCount = -1 }, 1));
+    Throws(() => new CombatWorld(new BalanceConfig { bossEnrageHealth = 1 }, 1));
+});
 Check("regen and greed change the numbers they claim to", () =>
 {
     // The player is being hit at the same time, so this compares against the identical run
