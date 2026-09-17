@@ -35,7 +35,7 @@ namespace PetThem.Game
         private float drawAmount;
         private float accumulator, hurtFlash;
         private string recordingPath = "", recordingError = "";
-        private GUIStyle title, heading, body, small, button;
+        private GUIStyle title, heading, body, small, button, menuTitle, menuHeading, menuButton;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void Bootstrap()
@@ -487,6 +487,9 @@ namespace PetThem.Game
             title.normal.textColor = heading.normal.textColor = body.normal.textColor = paper;
             small.normal.textColor = mint;
             button.normal.textColor = button.hover.textColor = button.active.textColor = paper;
+            menuTitle = new GUIStyle(title) { fontSize = 44, wordWrap = true };
+            menuHeading = new GUIStyle(heading) { fontSize = 24, wordWrap = true };
+            menuButton = new GUIStyle(button) { wordWrap = true };
         }
         private void Panel(Rect rect, Color color)
         { Color previous = GUI.color; GUI.color = color; GUI.DrawTexture(rect, Texture2D.whiteTexture); GUI.color = previous; }
@@ -550,40 +553,7 @@ namespace PetThem.Game
                 DrawUpgradeChoices(width);
             bool onMenu = !started || paused || world.State != RunState.Playing;
             if (onMenu && shopOpen) { DrawShop(width); return; }
-            if (onMenu)
-            {
-                Panel(new Rect(0,76,width,644),new Color(ink.r,ink.g,ink.b,.92f));
-                float left = width/2-340;
-                if (width >= 1100)
-                {
-                    GUI.DrawTexture(new Rect(left-215,180,190,190),Art.Creature(Look.Player).texture,ScaleMode.ScaleToFit,true);
-                    GUI.DrawTexture(new Rect(left-178,383,120,120),Art.Creature(LookOf(petChoice)).texture,ScaleMode.ScaleToFit,true);
-                }
-                GUI.Label(new Rect(left,158,700,90),!started ? Texts.StartHeadline :
-                    paused && world.State == RunState.Playing ? Texts.PausedHeadline :
-                    world.BossDefeated ? Texts.BossDownHeadline :
-                    world.State == RunState.Won ? Texts.WonHeadline : Texts.LostHeadline,title);
-                GUI.Label(new Rect(left,265,680,90),!started ? Texts.StartBlurb :
-                    Texts.RunResult(FormatTime(world.Time), world.Kills, world.Wave) + "\n" +
-                    Texts.CoinsEarned(lastRunCoins, world.BossDefeated, profile.coins),heading);
-                bool picking = !started || world.State != RunState.Playing;
-                GUI.Label(new Rect(left,370,680,90),
-                    !started ? Texts.StartControls : Texts.EnemyLegend,body);
-                if (picking) DrawWeaponPicker(left);
-                string label = !started ? Texts.Play :
-                    paused && world.State == RunState.Playing ? Texts.KeepGoing : Texts.TryAgain;
-                if (GUI.Button(new Rect(left,608,340,58),label,button))
-                { if (started && paused && world.State == RunState.Playing) TogglePause(); else StartRun(); }
-                if (started && paused && world.State == RunState.Playing &&
-                    GUI.Button(new Rect(left+360,608,220,58),Texts.Restart,button)) StartRun();
-                else if (picking && GUI.Button(new Rect(left+360,608,300,58),
-                    Texts.Shop(profile.coins),button)) shopOpen = true;
-                // Switching language is one tap, so the wrong default is never a dead end.
-                if (GUI.Button(new Rect(width-190,608,160,58),Texts.LanguageName(Texts.Next),button))
-                    Texts.Use(Texts.Next);
-                GUI.Label(new Rect(left,676,680,44),recordingError.Length > 0 ? recordingError :
-                    started ? Texts.RunLog(recordingPath) : Texts.Build,small);
-            }
+            if (onMenu) DrawMainMenu(width);
         }
         /// <summary>
         /// Shows the bow being drawn: where the pull started, how far it has come, and how strong
@@ -625,39 +595,96 @@ namespace PetThem.Game
         /// The weapon is chosen before the run and cannot change during it, so the upgrades that
         /// appear later all belong to the same weapon.
         /// </summary>
-        private void DrawWeaponPicker(float left)
+        private Vector2 menuScroll;
+
+        private void DrawMainMenu(float width)
         {
-            GUI.Label(new Rect(left,434,680,30),Texts.WeaponPickerLabel,small);
+            Panel(new Rect(0,76,width,644),new Color(ink.r,ink.g,ink.b,.92f));
+            bool portraits = width >= 1100;
+            float contentWidth = Mathf.Min(760, width - (portraits ? 280 : 64));
+            float left = (width - contentWidth - (portraits ? 210 : 0)) / 2 + (portraits ? 210 : 0);
+            if (portraits)
+            {
+                GUI.DrawTexture(new Rect(left-210,150,180,180),Art.Creature(Look.Player).texture,ScaleMode.ScaleToFit,true);
+                GUI.DrawTexture(new Rect(left-176,355,120,120),Art.Creature(LookOf(petChoice)).texture,ScaleMode.ScaleToFit,true);
+            }
+            // GUILayout measures each wrapped label with the active font. No following control
+            // can begin until the preceding text has consumed its actual height.
+            GUILayout.BeginArea(new Rect(left,100,contentWidth,600));
+            menuScroll = GUILayout.BeginScrollView(menuScroll, false, false);
+            GUILayout.Label(!started ? Texts.StartHeadline :
+                paused && world.State == RunState.Playing ? Texts.PausedHeadline :
+                world.BossDefeated ? Texts.BossDownHeadline :
+                world.State == RunState.Won ? Texts.WonHeadline : Texts.LostHeadline,menuTitle);
+            GUILayout.Space(12);
+            GUILayout.Label(!started ? Texts.StartBlurb :
+                Texts.RunResult(FormatTime(world.Time),world.Kills,world.Wave) + "\n" +
+                Texts.CoinsEarned(lastRunCoins,world.BossDefeated,profile.coins),menuHeading);
+            GUILayout.Space(12);
+            GUILayout.Label(!started ? Texts.StartControls : Texts.EnemyLegend,body);
+            GUILayout.Space(14);
+            bool picking = !started || world.State != RunState.Playing;
+            if (picking) DrawWeaponPicker();
+            GUILayout.Space(14);
+            GUILayout.BeginHorizontal();
+            string label = !started ? Texts.Play :
+                paused && world.State == RunState.Playing ? Texts.KeepGoing : Texts.TryAgain;
+            if (GUILayout.Button(label,menuButton,GUILayout.MinHeight(52)))
+            { if (started && paused && world.State == RunState.Playing) TogglePause(); else StartRun(); }
+            GUILayout.Space(12);
+            if (started && paused && world.State == RunState.Playing)
+            {
+                if (GUILayout.Button(Texts.Restart,menuButton,GUILayout.MinHeight(52))) StartRun();
+            }
+            else if (picking && GUILayout.Button(Texts.Shop(profile.coins),menuButton,GUILayout.MinHeight(52))) shopOpen = true;
+            GUILayout.EndHorizontal();
+            GUILayout.Space(10);
+            // The language button has its own row instead of covering the shop on narrow views.
+            if (GUILayout.Button(Texts.LanguageName(Texts.Next),menuButton,GUILayout.MinHeight(40))) Texts.Use(Texts.Next);
+            GUILayout.Space(8);
+            GUILayout.Label(recordingError.Length > 0 ? recordingError :
+                started ? Texts.RunLog(recordingPath) : Texts.Build,small);
+            GUILayout.EndScrollView();
+            GUILayout.EndArea();
+        }
+
+        private void DrawWeaponPicker()
+        {
+            GUILayout.Label(Texts.WeaponPickerLabel,small);
+            GUILayout.Space(4);
+            GUILayout.BeginHorizontal();
             var weapons = new[] { WeaponId.Punch, WeaponId.Arrow, WeaponId.Laser };
             for (int i = 0; i < weapons.Length; i++)
             {
+                if (i > 0) GUILayout.Space(12);
                 bool chosen = weapon == weapons[i];
                 Color previous = GUI.color;
                 GUI.color = chosen ? mint : new Color(1,1,1,.55f);
-                if (GUI.Button(new Rect(left + i * 190,464,178,44),
-                    (chosen ? "> " : "") + Texts.Weapon(weapons[i]),button)) weapon = weapons[i];
+                if (GUILayout.Button((chosen ? "> " : "") + Texts.Weapon(weapons[i]),button,
+                    GUILayout.MinHeight(44),GUILayout.ExpandWidth(true))) weapon = weapons[i];
                 GUI.color = previous;
             }
-
-            GUI.Label(new Rect(left,516,680,30),Texts.PetPickerLabel(petChoice),small);
+            GUILayout.EndHorizontal();
+            GUILayout.Space(10);
+            GUILayout.Label(Texts.PetPickerLabel(petChoice),small);
+            GUILayout.Space(4);
+            GUILayout.BeginHorizontal();
             var pets = new[] { PetId.Mochi, PetId.Bori, PetId.Coco };
             for (int i = 0; i < pets.Length; i++)
             {
+                if (i > 0) GUILayout.Space(12);
                 bool owned = profile.IsUnlocked(pets[i]);
                 bool chosen = petChoice == pets[i];
                 Color previous = GUI.color;
                 GUI.color = !owned ? new Color(1,1,1,.3f) : chosen ? PetColor(pets[i]) : new Color(1,1,1,.55f);
                 string label = owned ? (chosen ? "> " : "") + Texts.Pet(pets[i])
-                    : Texts.Pet(pets[i]) + "  " + PlayerProfile.PriceOf(pets[i], config);
-                if (GUI.Button(new Rect(left + i * 190,546,178,44),label,button))
-                {
-                    // A locked buddy sends the player to the shop rather than silently doing nothing.
-                    if (owned) petChoice = pets[i]; else shopOpen = true;
-                }
+                    : Texts.Pet(pets[i]) + "  " + PlayerProfile.PriceOf(pets[i],config);
+                if (GUILayout.Button(label,button,GUILayout.MinHeight(44),GUILayout.ExpandWidth(true)))
+                { if (owned) petChoice = pets[i]; else shopOpen = true; }
                 GUI.color = previous;
             }
+            GUILayout.EndHorizontal();
         }
-
         /// <summary>
         /// The shop is the only place coins are spent. It is deliberately a separate screen so a
         /// mis-tap on the start screen cannot buy anything.
