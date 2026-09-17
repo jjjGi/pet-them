@@ -68,3 +68,67 @@ MCP의 analyze_playtests 구현을 대신하는 도구가 아니라 Play 모드 
 - 실제 Android 기기의 입력·가독성·성능·피로도.
 - 컴퓨터 조작 플러그인의 node_repl 도구가 이번 세션에 노출되지 않아 에이전트 직접 UI 확인은 수행하지 못했다.
   다음 세션에는 실제 도구 가용성을 다시 확인한다.
+
+## 폰에서 확인하기
+
+### 1. APK 만들기
+
+Unity 에디터가 열려 있으면 메뉴에서 바로 뽑는 게 빠르다.
+
+**PET THEM > Build Android development APK**
+
+결과물: `game/Builds/PetThem-development.apk` (Git 제외).
+첫 빌드는 5~10분 걸린다. 에디터를 닫은 상태라면 배치 모드로도 가능하다.
+
+~~~powershell
+& "C:/Program Files/Unity/Hub/Editor/6000.3.24f1/Editor/Unity.exe" `
+  -batchmode -quit -projectPath D:/Project/PetThemGame/game -buildTarget Android `
+  -executeMethod PetThem.Editor.PrototypeSetup.BuildAndroid -logFile $env:TEMP/unity-android.log
+~~~
+
+**실행 중인 에디터가 있으면 배치 모드를 같이 돌리지 않는다.** 프로젝트가 잠겨 있어 실패한다.
+
+### 2. 폰에 넣기
+
+USB 케이블이 있으면 이 방법이 제일 빠르다.
+
+1. 폰: 설정 > 휴대전화 정보 > 빌드 번호를 7번 눌러 개발자 옵션을 켠다.
+2. 설정 > 개발자 옵션 > **USB 디버깅**을 켠다.
+3. 케이블로 연결한다. 폰에 뜨는 "USB 디버깅을 허용하시겠습니까?"를 허용한다.
+4. PC에서:
+
+~~~powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File D:/Project/PetThemGame/scripts/install-apk.ps1
+~~~
+
+설치하고 앱까지 실행한다. 이미 설치돼 있으면 덮어쓰되 **저장 파일(코인·해금)은 유지**된다.
+
+케이블이 없으면 APK 파일을 클라우드나 메일로 폰에 보내고 파일 관리자에서 탭한다.
+이때 "출처를 알 수 없는 앱 설치"를 허용해야 한다.
+
+### 3. 폰에서 먼저 볼 것
+
+| 확인 | 왜 |
+| --- | --- |
+| **한글이 네모(□)로 깨지지 않는지** | IMGUI 기본 폰트에 한글이 없어 OS 폰트로 대체한다. PC는 되지만 Android는 미확인이다 |
+| 글자가 카드·버튼 밖으로 넘치지 않는지 | 한국어가 영어보다 긴 곳이 있다 |
+| 왼손 이동과 오른손 공격이 **동시에** 되는지 | 멀티터치. 프로토타입의 핵심 가정이다 |
+| 화살: 끌어서 조준 → 떼면 발사가 손에 붙는지 | |
+| 레이저: 드래그 없이 누르면 빔이 직전 방향에 멈춘다 | 자동 조준을 일부러 넣지 않았다. 어색한지 판단이 필요하다 |
+| 프레임이 버티는지 | 적이 상한(100)까지 쌓이는 후반 |
+| 코인이 앱을 껐다 켜도 남는지 | Android의 persistentDataPath 쓰기 확인 |
+
+### 4. 로그 보기
+
+플레이 중 문제가 생기면 PC에서:
+
+~~~powershell
+& "C:/Program Files/Unity/Hub/Editor/6000.3.24f1/Editor/Data/PlaybackEngines/AndroidPlayer/SDK/platform-tools/adb.exe" logcat -s Unity
+~~~
+
+### 알아둘 것
+
+- 개발 빌드라 `android.permission.INTERNET`이 들어간다. 프로파일러용이며 게임은 오프라인이다.
+  출시 빌드에서 빠지는지는 단계 E에서 확인한다.
+- arm64-v8a 전용이다. 요즘 폰은 모두 해당한다.
+- 저장 파일과 플레이 기록은 폰에 따로 생긴다. PC의 코인과 합쳐지지 않는다.
