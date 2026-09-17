@@ -44,5 +44,13 @@
   "bossRadius": 1.9,
   "coinsPerKill": 1,
   "coinsPerBossKill": 150,
-  "coinsPerSecondSurvived": 0.5
+  "coinsPerSecondSurvived": 0.5,
+  "petControlDamageShare": 0.45,
+  "petSupportDamageShare": 0.3,
+  "petSlowFactor": 0.45,
+  "petSlowSeconds": 1.6,
+  "petControlKnockback": 1.2,
+  "petHealInterval": 6.5,
+  "petHealAmount": 7,
+  "petGuardReduction": 0.22
 }

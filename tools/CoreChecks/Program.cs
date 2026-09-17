@@ -443,8 +443,128 @@ Check("coins come from kills, the boss and time, and reset with the run", () =>
     Throws(() => new CombatWorld(new BalanceConfig { bruteShare = -0.1f }, 1));
     Throws(() => new CombatWorld(new BalanceConfig { bruteShare = 1 }, 1));
 });
+Check("each pet trades damage for its own effect", () =>
+{
+    var config = new BalanceConfig();
+    var mochi = new CombatWorld(config, 42, false, WeaponId.Punch, PetId.Mochi);
+    var bori = new CombatWorld(config, 42, false, WeaponId.Punch, PetId.Bori);
+    var coco = new CombatWorld(config, 42, false, WeaponId.Punch, PetId.Coco);
+
+    True(mochi.PetDamage > bori.PetDamage && bori.PetDamage > coco.PetDamage);
+    Near(mochi.PetDamage, config.petDamage);
+    True(mochi.GuardReduction == 0 && bori.GuardReduction == 0);
+    Near(coco.GuardReduction, config.petGuardReduction);
+    True(mochi.Pet == PetId.Mochi && coco.Pet == PetId.Coco);
+});
+Check("the control pet slows and shoves what it hits, and the slow wears off", () =>
+{
+    var config = new BalanceConfig { playerHealth = 100000, petDamage = .0001f, petRange = 40,
+        petCooldown = .05f, petSlowSeconds = .5f, petSlowFactor = .2f,
+        spawnInterval = .3f, minSpawnInterval = .3f, bossSpawnTime = 1000 };
+    var bori = new CombatWorld(config, 42, false, WeaponId.Punch, PetId.Bori);
+    int slows = 0;
+    for (int i = 0; i < 300; i++) { bori.Step(default); slows += Count(bori, "slow", "pet"); }
+    True(slows > 0);
+    bool anySlowed = false;
+    foreach (Enemy e in bori.Enemies) if (e.Slowed) anySlowed = true;
+    True(anySlowed);
+
+    // Mochi does the same damage but never slows anything.
+    var mochi = new CombatWorld(config, 42, false, WeaponId.Punch, PetId.Mochi);
+    for (int i = 0; i < 300; i++)
+    { mochi.Step(default); True(Count(mochi, "slow", "pet") == 0); }
+    foreach (Enemy e in mochi.Enemies) True(!e.Slowed);
+
+    // A slowed enemy closes on the player more slowly than the same enemy would otherwise.
+    var slowConfig = new BalanceConfig { playerHealth = 100000, petDamage = .0001f, petRange = 40,
+        petCooldown = .05f, petSlowSeconds = 30, petSlowFactor = .2f, petControlKnockback = .0001f,
+        spawnInterval = .3f, minSpawnInterval = .3f, bossSpawnTime = 1000 };
+    var slowed = new CombatWorld(slowConfig, 7, false, WeaponId.Punch, PetId.Bori);
+    var normal = new CombatWorld(slowConfig, 7, false, WeaponId.Punch, PetId.Mochi);
+    for (int i = 0; i < 600; i++) { slowed.Step(default); normal.Step(default); }
+    True(Spread(slowed) > Spread(normal));
+});
+Check("the support pet heals on its interval and softens contact damage", () =>
+{
+    var config = new BalanceConfig { playerHealth = 100, petRange = .0001f,
+        petHealInterval = 1, petHealAmount = 9, petGuardReduction = .5f, contactDamage = 20,
+        hurtCooldown = .2f, spawnInterval = .1f, minSpawnInterval = .1f, bossSpawnTime = 1000 };
+    var coco = new CombatWorld(config, 42, false, WeaponId.Punch, PetId.Coco);
+
+    // Full health, so there is nothing to heal and no heal event is written.
+    for (int i = 0; i < 120; i++) { coco.Step(default); True(Count(coco, "heal", "pet") == 0); }
+
+    float firstHurt = 0;
+    for (int i = 0; i < 600 && firstHurt == 0; i++)
+    {
+        coco.Step(default);
+        foreach (CombatEvent e in coco.Events) if (e.type == "hurt") firstHurt = e.value;
+    }
+    // Half the contact damage is blocked, so the recorded hurt is the reduced number.
+    Near(firstHurt, config.contactDamage * (1 - config.petGuardReduction));
+
+    int heals = 0;
+    for (int i = 0; i < 300; i++) { coco.Step(default); heals += Count(coco, "heal", "pet"); }
+    True(heals > 0);
+
+    // The same fight with Mochi takes full contact damage and never heals.
+    var mochi = new CombatWorld(config, 42, false, WeaponId.Punch, PetId.Mochi);
+    float mochiHurt = 0;
+    for (int i = 0; i < 600 && mochiHurt == 0; i++)
+    {
+        mochi.Step(default);
+        True(Count(mochi, "heal", "pet") == 0);
+        foreach (CombatEvent e in mochi.Events) if (e.type == "hurt") mochiHurt = e.value;
+    }
+    Near(mochiHurt, config.contactDamage);
+    True(mochiHurt > firstHurt);
+});
+Check("upgrades offered match the pet as well as the weapon", () =>
+{
+    foreach (PetId pet in new[] { PetId.Mochi, PetId.Bori, PetId.Coco })
+    {
+        var world = new CombatWorld(new BalanceConfig { playerHealth = 100000, petDamage = 1000,
+            petRange = 100, petCooldown = .01f, spawnInterval = .01f, minSpawnInterval = .01f,
+            bossSpawnTime = 1000 }, 42, true, WeaponId.Arrow, pet);
+        for (int level = 0; level < 8; level++)
+        {
+            UntilChoice(world);
+            True(world.UpgradeChoices.Count == 3);
+            foreach (UpgradeChoice choice in world.UpgradeChoices)
+            {
+                True(world.AppliesToWeapon(choice.Id));
+                True(!OtherPetUpgrade(choice.Id, pet));
+                True(!OtherWeaponUpgrade(choice.Id, WeaponId.Arrow));
+            }
+            world.ChooseUpgrade(world.UpgradeChoices[0].Id);
+        }
+    }
+});
+Check("bad pet values are rejected", () =>
+{
+    Throws(() => new CombatWorld(new BalanceConfig { petSlowFactor = 0 }, 1));
+    Throws(() => new CombatWorld(new BalanceConfig { petSlowFactor = 1.5f }, 1));
+    Throws(() => new CombatWorld(new BalanceConfig { petGuardReduction = -0.1f }, 1));
+    Throws(() => new CombatWorld(new BalanceConfig { petGuardReduction = 1 }, 1));
+    Throws(() => new CombatWorld(new BalanceConfig { petHealInterval = 0 }, 1));
+    Throws(() => new CombatWorld(new BalanceConfig { petControlDamageShare = 0 }, 1));
+});
 Console.WriteLine(passed + " checks passed.");
 return;
+
+// Mean distance from the player: a crowd that is slowed stays further out.
+float Spread(CombatWorld world)
+{
+    if (world.Enemies.Count == 0) return 0;
+    float total = 0;
+    foreach (Enemy e in world.Enemies) total += (e.Position - world.Position).Length;
+    return total / world.Enemies.Count;
+}
+
+bool OtherPetUpgrade(UpgradeId id, PetId pet) =>
+    (id == UpgradeId.PetReach && pet != PetId.Mochi)
+    || (id == UpgradeId.PetChill && pet != PetId.Bori)
+    || (id == UpgradeId.PetGuard && pet != PetId.Coco);
 
 int Count(CombatWorld world, string type, string source)
 {

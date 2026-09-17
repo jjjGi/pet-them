@@ -13,9 +13,9 @@ namespace PetThem.Game
             public string type = "run_start", schemaVersion = "2", source = "human";
             public bool progressionEnabled;
             public string progressionVersion = "kill-xp-1";
-            // The weapon decides which upgrades can appear, so a run is only comparable to another
-            // run that started with the same one.
-            public string weapon;
+            // The weapon and the pet decide which upgrades can appear, so a run is only
+            // comparable to another run that started with the same pair.
+            public string weapon, pet;
             public string runId, startedUtc, buildVersion, platform, unityVersion, configJson;
             public int seed;
             public float fixedStep = CombatWorld.StepSeconds;
@@ -33,6 +33,7 @@ namespace PetThem.Game
                 runId = id, startedUtc = DateTime.UtcNow.ToString("O"), seed = world.Seed,
                 buildVersion = Application.version, platform = Application.platform.ToString(),
                 progressionEnabled = world.ProgressionEnabled, weapon = world.Weapon.ToString(),
+                pet = world.Pet.ToString(),
                 unityVersion = Application.unityVersion, configJson = JsonUtility.ToJson(world.GetConfig())
             }));
             writer.Flush();

@@ -44,6 +44,10 @@ namespace PetThem.Combat
         public float bossContactDamage = 26, bossRadius = 1.9f;
         // Run reward. Spent in the shop between runs, which is not built yet.
         public float coinsPerKill = 1, coinsPerBossKill = 150, coinsPerSecondSurvived = 0.5f;
+        // Pets. Mochi uses petDamage as it is; the other two trade damage for their own effect.
+        public float petControlDamageShare = 0.45f, petSupportDamageShare = 0.3f;
+        public float petSlowFactor = 0.45f, petSlowSeconds = 1.6f, petControlKnockback = 1.2f;
+        public float petHealInterval = 6.5f, petHealAmount = 7, petGuardReduction = 0.22f;
 
         public BalanceConfig Copy() => (BalanceConfig)MemberwiseClone();
         public void Validate()
@@ -56,8 +60,14 @@ namespace PetThem.Combat
                 laserDamagePerSecond, laserRange, laserWidth,
                 laserHeatPerSecond, laserCoolPerSecond, laserOverheatPenalty,
                 bruteHealth, bruteSpeed, bruteContactDamage,
-                bossSpawnTime, bossHealth, bossSpeed, bossContactDamage, bossRadius })
+                bossSpawnTime, bossHealth, bossSpeed, bossContactDamage, bossRadius,
+                petSlowSeconds, petControlKnockback, petHealInterval, petHealAmount })
                 if (!Vec2.Finite(value) || value <= 0) throw new ArgumentException("Balance values must be finite and positive.");
+            foreach (float share in new[] { petControlDamageShare, petSupportDamageShare, petSlowFactor })
+                if (!Vec2.Finite(share) || share <= 0 || share > 1)
+                    throw new ArgumentException("Pet shares and the slow factor must be above 0 and at most 1.");
+            if (!Vec2.Finite(petGuardReduction) || petGuardReduction < 0 || petGuardReduction > 0.9f)
+                throw new ArgumentException("petGuardReduction must be between 0 and 0.9.");
             if (!Vec2.Finite(punchKnockback) || punchKnockback < 0) throw new ArgumentException("Invalid knockback.");
             foreach (float reward in new[] { coinsPerKill, coinsPerBossKill, coinsPerSecondSurvived })
                 if (!Vec2.Finite(reward) || reward < 0) throw new ArgumentException("Reward values must be finite and not negative.");
@@ -95,6 +105,10 @@ namespace PetThem.Combat
         public float MaxHealth { get; internal set; }
         /// <summary>Body size. A bigger enemy is easier to hit and reaches the player sooner.</summary>
         public float Radius { get; internal set; } = 0.4f;
+        /// <summary>Tick this enemy stops being slowed. Set by the control pet.</summary>
+        internal int SlowUntilTick;
+        /// <summary>Drawn differently while true, so the player can see the pet working.</summary>
+        public bool Slowed { get; internal set; }
     }
 
     [Serializable]
@@ -134,12 +148,16 @@ namespace PetThem.Combat
             : this(config, seed, enableProgression, WeaponId.Punch) { }
 
         public CombatWorld(BalanceConfig config, int seed, bool enableProgression, WeaponId weapon)
+            : this(config, seed, enableProgression, weapon, PetId.Mochi) { }
+
+        public CombatWorld(BalanceConfig config, int seed, bool enableProgression, WeaponId weapon, PetId pet)
         {
             if (config == null) throw new ArgumentNullException(nameof(config));
             config.Validate();
             this.config = config.Copy();
             baseConfig = config.Copy();
             Weapon = weapon;
+            Pet = pet;
             projectileView = projectiles.AsReadOnly();
             ProgressionEnabled = enableProgression;
             progressionRandom = unchecked((uint)seed) ^ 0xa341316c;
@@ -175,28 +193,20 @@ namespace PetThem.Combat
 
             StepWeapon(input);
             // Killing the boss ends the run inside the attack above, so nothing after it may act.
-            if (State == RunState.Playing && Tick >= nextPet)
-            {
-                Enemy target = Nearest(config.petRange);
-                if (target != null)
-                {
-                    nextPet = Tick + Frames(config.petCooldown);
-                    Emit("attack", "pet", target.Id, 0, target.Position);
-                    Damage(target, config.petDamage, "pet");
-                }
-            }
+            if (State == RunState.Playing) StepPet();
 
             for (int i = 0; i < enemies.Count && State == RunState.Playing; i++)
             {
                 Enemy enemy = enemies[i];
                 Vec2 delta = Position - enemy.Position;
-                float travel = Math.Min(delta.Length, SpeedOf(enemy.Kind) * StepSeconds);
+                float travel = Math.Min(delta.Length, SpeedOf(enemy) * StepSeconds);
                 enemy.Position += delta.Normalized * travel;
                 // A bigger body reaches the player from further out.
                 if ((enemy.Position - Position).Length <= 0.35f + enemy.Radius && Tick >= nextHurt)
                 {
                     nextHurt = Tick + Frames(config.hurtCooldown);
-                    float actual = Math.Min(Health, ContactDamageOf(enemy.Kind));
+                    float incoming = ContactDamageOf(enemy.Kind) * (1 - GuardReduction);
+                    float actual = Math.Min(Health, incoming);
                     Health -= actual;
                     Emit("hurt", enemy.Kind.ToString(), enemy.Id, actual, Position);
                     if (Health <= 0) { State = RunState.Lost; Emit("run_end", "death", enemy.Id, Kills); break; }

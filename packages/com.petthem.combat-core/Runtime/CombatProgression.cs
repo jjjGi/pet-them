@@ -8,7 +8,9 @@ namespace PetThem.Combat
         PunchPower, PunchReach,
         ArrowPower, ArrowPierce,
         LaserPower, LaserCooling,
-        PetPower, PetHaste, MoveSpeed, Vitality, Heal,
+        PetPower, PetHaste,
+        PetReach, PetChill, PetGuard,
+        MoveSpeed, Vitality, Heal,
     }
 
     public sealed class UpgradeChoice
@@ -49,6 +51,10 @@ namespace PetThem.Combat
                 case UpgradeId.ArrowPierce: return Weapon == WeaponId.Arrow;
                 case UpgradeId.LaserPower:
                 case UpgradeId.LaserCooling: return Weapon == WeaponId.Laser;
+                // One upgrade belongs to each pet's own role.
+                case UpgradeId.PetReach: return Pet == PetId.Mochi;
+                case UpgradeId.PetChill: return Pet == PetId.Bori;
+                case UpgradeId.PetGuard: return Pet == PetId.Coco;
                 default: return true;
             }
         }
@@ -56,7 +62,8 @@ namespace PetThem.Combat
         /// <summary>Upgrades that would break the feel of the run if stacked without limit.</summary>
         public static bool IsRankCapped(UpgradeId id) =>
             id == UpgradeId.PunchReach || id == UpgradeId.ArrowPierce || id == UpgradeId.LaserCooling ||
-            id == UpgradeId.PetHaste || id == UpgradeId.MoveSpeed;
+            id == UpgradeId.PetHaste || id == UpgradeId.MoveSpeed ||
+            id == UpgradeId.PetReach || id == UpgradeId.PetChill || id == UpgradeId.PetGuard;
 
         private void AwardExperience()
         {
@@ -115,6 +122,15 @@ namespace PetThem.Combat
                     break;
                 case UpgradeId.PetPower: config.petDamage += baseConfig.petDamage * .25f; break;
                 case UpgradeId.PetHaste: config.petCooldown = baseConfig.petCooldown * (1 - .1f * UpgradeRank(id)); break;
+                case UpgradeId.PetReach: config.petRange += baseConfig.petRange * .12f; break;
+                case UpgradeId.PetChill:
+                    config.petSlowFactor = Math.Max(.15f, baseConfig.petSlowFactor - .06f * UpgradeRank(id));
+                    config.petSlowSeconds += baseConfig.petSlowSeconds * .15f;
+                    break;
+                case UpgradeId.PetGuard:
+                    config.petGuardReduction = Math.Min(.7f, baseConfig.petGuardReduction + .06f * UpgradeRank(id));
+                    config.petHealAmount += baseConfig.petHealAmount * .25f;
+                    break;
                 case UpgradeId.MoveSpeed: config.playerSpeed += baseConfig.playerSpeed * .08f; break;
                 case UpgradeId.Vitality:
                     config.playerHealth += baseConfig.playerHealth * .2f;
@@ -142,6 +158,9 @@ namespace PetThem.Combat
                 case UpgradeId.LaserCooling: title = "COOL HEAD"; description = "Laser heats 10% slower and cools faster.\nUp to 5 ranks."; break;
                 case UpgradeId.PetPower: title = "MOCHI MUSCLE"; description = "Mochi damage +25% of starting power."; break;
                 case UpgradeId.PetHaste: title = "EAGER BUDDY"; description = "Mochi attack interval -10% of starting interval.\nUp to 5 ranks."; break;
+                case UpgradeId.PetReach: title = "LONGER LEASH"; description = "Mochi reaches 12% further.\nUp to 5 ranks."; break;
+                case UpgradeId.PetChill: title = "COLD NOSE"; description = "Bori's chill is stronger and lasts longer.\nUp to 5 ranks."; break;
+                case UpgradeId.PetGuard: title = "SOFT PILLOW"; description = "Coco blocks more contact damage and heals more.\nUp to 5 ranks."; break;
                 case UpgradeId.MoveSpeed: title = "QUICK PAWS"; description = "Move speed +8% of starting speed.\nUp to 5 ranks."; break;
                 case UpgradeId.Vitality: title = "MORE HEART"; description = "Max health +20% of starting health.\nRestore the same amount now."; break;
                 default: title = "PET BREAK"; description = "Restore 40% of your current max health."; break;

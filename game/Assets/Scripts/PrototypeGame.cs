@@ -25,6 +25,7 @@ namespace PetThem.Game
         private readonly List<int> staleArrows = new List<int>();
         private GameObject beam;
         private WeaponId weapon = WeaponId.Punch;
+        private PetId petChoice = PetId.Mochi;
         private Vec2 move, aim, queuedAim;
         private bool queuedPunch, holdAttack, paused, started;
         private int moveFinger = -1, attackFinger = -1;
@@ -64,7 +65,7 @@ namespace PetThem.Game
             pet = CreateCreature("Mochi", mint, 0.55f, 11, true).transform;
             beam = RectSprite("Laser beam", Vector2.zero, Vector2.one, coral, 9);
             beam.SetActive(false);
-            world = new CombatWorld(config, 42, true, weapon);
+            world = new CombatWorld(config, 42, true, weapon, petChoice);
         }
 
         private void StartRun()
@@ -77,7 +78,10 @@ namespace PetThem.Game
             foreach (var view in transient) Destroy(view);
             transient.Clear(); transientEnds.Clear();
             beam.SetActive(false);
-            world = new CombatWorld(config, unchecked(Environment.TickCount), true, weapon);
+            // The pet is rebuilt because its colour is part of telling the three apart.
+            if (pet != null) Destroy(pet.gameObject);
+            pet = CreateCreature(PetName(petChoice), PetColor(petChoice), 0.55f, 11, true).transform;
+            world = new CombatWorld(config, unchecked(Environment.TickCount), true, weapon, petChoice);
             started = true; paused = false; accumulator = 0; hurtFlash = 0;
             ClearInput();
             recordingError = "";
@@ -300,8 +304,23 @@ namespace PetThem.Game
                     views.Add(enemy.Id, view);
                 }
                 view.transform.position = new Vector3(enemy.Position.x,enemy.Position.y,0);
+                // A chilled enemy is tinted towards Bori's blue so the slow is visible.
+                view.GetComponent<SpriteRenderer>().color = enemy.Slowed
+                    ? Color.Lerp(EnemyColor(enemy.Kind), PetColor(PetId.Bori), .55f)
+                    : EnemyColor(enemy.Kind);
             }
         }
+        private Color PetColor(PetId id) =>
+            id == PetId.Bori ? new Color32(138, 200, 255, 255) :
+            id == PetId.Coco ? new Color32(255, 214, 150, 255) : mint;
+
+        private static string PetName(PetId id) => id.ToString().ToUpperInvariant();
+
+        private static string PetRole(PetId id) =>
+            id == PetId.Bori ? "chills and shoves what it bites" :
+            id == PetId.Coco ? "heals you and softens every hit" :
+            "hits hardest, no tricks";
+
         private static Color EnemyColor(EnemyKind kind)
         {
             switch (kind)
@@ -354,6 +373,19 @@ namespace PetThem.Game
         private void ShowEvent(CombatEvent e)
         {
             if (e.type == "hurt") hurtFlash = Time.unscaledTime + .15f;
+            if (e.type == "heal")
+            {
+                var ring = new GameObject("Heal");
+                ring.transform.SetParent(transform);
+                ring.transform.position = new Vector3(e.x, e.y, 0);
+                ring.transform.localScale = Vector3.one * 2.2f;
+                var hr = ring.AddComponent<SpriteRenderer>();
+                hr.sprite = circle;
+                hr.color = new Color(PetColor(PetId.Coco).r, PetColor(PetId.Coco).g, PetColor(PetId.Coco).b, .35f);
+                hr.sortingOrder = 9;
+                transient.Add(ring); transientEnds.Add(Time.unscaledTime + .35f);
+                return;
+            }
             if (e.type != "attack") return;
             // The arrow and the beam are drawn from world state every frame, not as a one-off flash.
             if (e.source == "arrow" || e.source == "laser") return;
@@ -412,7 +444,7 @@ namespace PetThem.Game
             Panel(new Rect(0,0,width,76),ink);
             GUI.Label(new Rect(28,15,260,45),"PET THEM!",heading);
             GUI.Label(new Rect(width/2-100,13,240,45),FormatTime(world.Time) + " / 03:00",heading);
-            GUI.Label(new Rect(28,87,320,32),"MOCHI  /  AUTO SUPPORT",small);
+            GUI.Label(new Rect(28,87,320,32),PetName(petChoice) + "  /  " + WeaponName(weapon),small);
             if (started)
             {
                 Panel(new Rect(28,48,220,9),new Color(.3f,.35f,.38f));
@@ -435,6 +467,10 @@ namespace PetThem.Game
                 else if (!world.BossDefeated && world.State == RunState.Playing)
                     GUI.Label(new Rect(width/2-140,600,300,30),
                         "BIG ONE IN " + Mathf.CeilToInt(world.SecondsToBoss) + "s",small);
+                if (world.GuardReduction > 0)
+                    GUI.Label(new Rect(28,188,360,30),
+                        "COCO  /  -" + Mathf.RoundToInt(world.GuardReduction * 100) + "% contact   /   heal in " +
+                        Mathf.CeilToInt(world.SecondsToPetHeal) + "s",small);
                 GUI.Label(new Rect(28,666,400,30),"MOVE  /  WASD or left thumb",small);
                 GUI.Label(new Rect(width-460,666,440,30),WeaponName(weapon) + "  /  " + WeaponHint(weapon),small);
                 if (weapon == WeaponId.Laser)
@@ -467,7 +503,7 @@ namespace PetThem.Game
                     world.BossDefeated ? "BIG ONE DOWN!" :
                     world.State == RunState.Won ? "NICE PETTING." : "ONE MORE PAT?",title);
                 GUI.Label(new Rect(left,265,680,90),!started ?
-                    "Survive 3 minutes with Mochi. A big one shows up late.\nEarn XP from KOs. Pick one of 3 upgrades." :
+                    "Survive 3 minutes. A big one shows up at 2:00.\nPick a weapon and a buddy, then one of 3 upgrades per level." :
                     "Time " + FormatTime(world.Time) + "   /   " + world.Kills + " KOs   /   Wave " + world.Wave +
                     "\n" + world.Coins + " COINS" + (world.BossDefeated ? "   (big one bonus included)" : ""),heading);
                 bool picking = !started || world.State != RunState.Playing;
@@ -476,12 +512,12 @@ namespace PetThem.Game
                     "Mint = Mochi. Coral = chaser. Gold = runner. Purple = brute, slow but heavy.\nPink = the big one. Take it down to end the run early.",body);
                 if (picking) DrawWeaponPicker(left);
                 string label = !started ? "LET'S PLAY  >" : paused && world.State == RunState.Playing ? "KEEP GOING  >" : "TRY AGAIN  >";
-                if (GUI.Button(new Rect(left,560,340,62),label,button))
+                if (GUI.Button(new Rect(left,608,340,58),label,button))
                 { if (started && paused && world.State == RunState.Playing) TogglePause(); else StartRun(); }
                 if (started && paused && world.State == RunState.Playing &&
-                    GUI.Button(new Rect(left+360,560,220,62),"RESTART",button)) StartRun();
-                GUI.Label(new Rect(left,638,680,70),recordingError.Length > 0 ? recordingError :
-                    started ? "Run log: " + recordingPath : "PROTOTYPE 0.3  /  SURVIVAL + UPGRADES + WEAPONS",small);
+                    GUI.Button(new Rect(left+360,608,220,58),"RESTART",button)) StartRun();
+                GUI.Label(new Rect(left,676,680,44),recordingError.Length > 0 ? recordingError :
+                    started ? "Run log: " + recordingPath : "PROTOTYPE 0.5  /  WEAPONS + BUDDIES + BOSS",small);
             }
         }
         /// <summary>
@@ -490,15 +526,27 @@ namespace PetThem.Game
         /// </summary>
         private void DrawWeaponPicker(float left)
         {
-            GUI.Label(new Rect(left,470,680,30),"MAIN WEAPON  /  pick one for the whole run",small);
-            var options = new[] { WeaponId.Punch, WeaponId.Arrow, WeaponId.Laser };
-            for (int i = 0; i < options.Length; i++)
+            GUI.Label(new Rect(left,434,680,30),"MAIN WEAPON  /  pick one for the whole run",small);
+            var weapons = new[] { WeaponId.Punch, WeaponId.Arrow, WeaponId.Laser };
+            for (int i = 0; i < weapons.Length; i++)
             {
-                bool chosen = weapon == options[i];
+                bool chosen = weapon == weapons[i];
                 Color previous = GUI.color;
                 GUI.color = chosen ? mint : new Color(1,1,1,.55f);
-                if (GUI.Button(new Rect(left + i * 190,502,178,46),
-                    (chosen ? "> " : "") + WeaponName(options[i]),button)) weapon = options[i];
+                if (GUI.Button(new Rect(left + i * 190,464,178,44),
+                    (chosen ? "> " : "") + WeaponName(weapons[i]),button)) weapon = weapons[i];
+                GUI.color = previous;
+            }
+
+            GUI.Label(new Rect(left,516,680,30),"BUDDY  /  " + PetRole(petChoice),small);
+            var pets = new[] { PetId.Mochi, PetId.Bori, PetId.Coco };
+            for (int i = 0; i < pets.Length; i++)
+            {
+                bool chosen = petChoice == pets[i];
+                Color previous = GUI.color;
+                GUI.color = chosen ? PetColor(pets[i]) : new Color(1,1,1,.55f);
+                if (GUI.Button(new Rect(left + i * 190,546,178,44),
+                    (chosen ? "> " : "") + PetName(pets[i]),button)) petChoice = pets[i];
                 GUI.color = previous;
             }
         }
