@@ -55,7 +55,7 @@ namespace PetThem.Game
         {
             switch (id)
             {
-                case WeaponId.Arrow: return Pick("끌어서 조준, 떼면 발사", "drag to aim, release to loose");
+                case WeaponId.Arrow: return Pick("당겼다가 놓으면 발사, 많이 당길수록 세게", "pull back and let go, the further the stronger");
                 case WeaponId.Laser: return Pick("누르는 동안 계속, 열 주의", "hold to burn, watch the heat");
                 case WeaponId.Punch: return Pick("탭으로 휘두름, 끌어서 조준", "tap to swing, drag to aim");
                 default: return id.ToString();
@@ -216,8 +216,8 @@ namespace PetThem.Game
         public static string Restart => Pick("처음부터", "RESTART");
         public static string Shop(int coins) => Pick($"상점  /  {coins}", $"SHOP  /  {coins}");
         public static string Back => Pick("< 뒤로", "< BACK");
-        public static string Build => Pick("프로토타입 0.8  /  무기 + 펫 + 보스 + 상점",
-            "PROTOTYPE 0.8  /  WEAPONS + BUDDIES + BOSS + SHOP");
+        public static string Build => Pick("프로토타입 0.9  /  무기 + 펫 + 보스 + 상점",
+            "PROTOTYPE 0.9  /  WEAPONS + BUDDIES + BOSS + SHOP");
         public static string RunLog(string path) => Pick($"기록: {path}", $"Run log: {path}");
 
         // Level-up screen

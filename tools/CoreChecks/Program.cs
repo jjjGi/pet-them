@@ -621,6 +621,62 @@ Check("a damaged save is repaired instead of breaking the game", () =>
     Throws(() => new CombatWorld(new BalanceConfig { boriPrice = 0 }, 1));
     Throws(() => new CombatWorld(new BalanceConfig { cocoPrice = float.NaN }, 1));
 });
+Check("the bow has to be drawn, and a longer pull makes a stronger shot", () =>
+{
+    var config = new BalanceConfig { playerHealth = 100000, petRange = .001f, arrowPierce = 1,
+        arrowMinDraw = .25f, arrowMinPower = .5f, bossSpawnTime = 1000,
+        spawnInterval = .01f, minSpawnInterval = .01f };
+    var world = new CombatWorld(config, 42, false, WeaponId.Arrow);
+
+    // The gauge and the shot read the same function, so what is shown is what is fired.
+    True(world.DrawPower(0) == 0);
+    True(world.DrawPower(.24f) == 0);
+    Near(world.DrawPower(.25f), .5f);
+    Near(world.DrawPower(1), 1);
+    Near(world.DrawPower(5), 1);          // clamped, not extrapolated
+    True(world.DrawPower(.6f) > world.DrawPower(.3f));
+
+    for (int i = 0; i < 300; i++) world.Step(default);
+
+    // A tap, or any pull below the minimum, is not a shot at all.
+    world.Step(new PlayerInput(default, default, false, true, .1f));
+    world.Step(new PlayerInput(default, default, false, false, .1f));
+    True(Count(world, "attack", "arrow") == 0);
+    True(world.Projectiles.Count == 0);
+    True(!world.WeaponBusy);
+
+    // Clearing the minimum fires, and the recorded damage is the reduced one.
+    world.Step(new PlayerInput(default, default, false, true, .25f));
+    world.Step(new PlayerInput(default, default, false, false, .25f));
+    float weak = 0;
+    foreach (CombatEvent e in world.Events) if (e.type == "attack" && e.source == "arrow") weak = e.value;
+    Near(weak, config.arrowDamage * .5f);
+
+    // A full pull is worth the configured damage.
+    var full = new CombatWorld(config, 42, false, WeaponId.Arrow);
+    for (int i = 0; i < 300; i++) full.Step(default);
+    full.Step(new PlayerInput(default, default, false, true, 1));
+    full.Step(new PlayerInput(default, default, false, false, 1));
+    float strong = 0;
+    foreach (CombatEvent e in full.Events) if (e.type == "attack" && e.source == "arrow") strong = e.value;
+    Near(strong, config.arrowDamage);
+    True(strong > weak);
+
+    // And it flies faster. Shot into an empty stretch of the arena so nothing eats the arrow
+    // before its speed can be read.
+    True(ArrowSpeed(1) > ArrowSpeed(.3f));
+
+    // Callers that do not pull, like the bots, still shoot at full strength.
+    var bot = new CombatWorld(config, 42, false, WeaponId.Arrow);
+    for (int i = 0; i < 300; i++) bot.Step(default);
+    bot.Step(new PlayerInput(default, default, true));
+    True(Count(bot, "attack", "arrow") == 1);
+
+    Throws(() => new CombatWorld(new BalanceConfig { arrowMinDraw = 1 }, 1));
+    Throws(() => new CombatWorld(new BalanceConfig { arrowMinDraw = -.1f }, 1));
+    Throws(() => new CombatWorld(new BalanceConfig { arrowMinPower = 0 }, 1));
+    Throws(() => new CombatWorld(new BalanceConfig { arrowMinPower = 1.5f }, 1));
+});
 Check("every id the player can see is translated in every language", () =>
 {
     var languages = (Language[])Enum.GetValues(typeof(Language));
@@ -706,6 +762,20 @@ bool OtherPetUpgrade(UpgradeId id, PetId pet) =>
     (id == UpgradeId.PetReach && pet != PetId.Mochi)
     || (id == UpgradeId.PetChill && pet != PetId.Bori)
     || (id == UpgradeId.PetGuard && pet != PetId.Coco);
+
+// Speed of an arrow loosed at the given pull, aimed away from the only enemy on the field.
+float ArrowSpeed(float draw)
+{
+    var world = new CombatWorld(new BalanceConfig { playerHealth = 100000, petRange = .001f,
+        arrowMinDraw = .25f, arrowMinPower = .5f, bossSpawnTime = 1000,
+        spawnInterval = 900, minSpawnInterval = 900 }, 42, false, WeaponId.Arrow);
+    world.Step(default);
+    Vec2 away = world.Enemies[0].Position.Normalized * -1;
+    world.Step(new PlayerInput(default, away, false, true, draw));
+    world.Step(new PlayerInput(default, away, false, false, draw));
+    True(world.Projectiles.Count == 1);
+    return world.Projectiles[0].Velocity.Length;
+}
 
 int Count(CombatWorld world, string type, string source)
 {

@@ -31,7 +31,8 @@ namespace PetThem.Game
         private Vec2 move, aim, queuedAim;
         private bool queuedPunch, holdAttack, paused, started;
         private int moveFinger = -1, attackFinger = -1;
-        private Vector2 moveAnchor, attackAnchor, movePoint;
+        private Vector2 moveAnchor, attackAnchor, movePoint, attackPoint;
+        private float drawAmount;
         private float accumulator, hurtFlash;
         private string recordingPath = "", recordingError = "";
         private GUIStyle title, heading, body, small, button;
@@ -109,7 +110,7 @@ namespace PetThem.Game
                 accumulator += Mathf.Min(Time.unscaledDeltaTime, 0.1f);
                 while (accumulator >= CombatWorld.StepSeconds)
                 {
-                    world.Step(new PlayerInput(move, queuedPunch ? queuedAim : aim, queuedPunch, holdAttack));
+                    world.Step(new PlayerInput(move, queuedPunch ? queuedAim : aim, queuedPunch, holdAttack, drawAmount));
                     queuedPunch = false;
                     RecordEvents();
                     foreach (CombatEvent e in world.Events) ShowEvent(e);
@@ -160,8 +161,10 @@ namespace PetThem.Game
                     if (touch.fingerId == attackFinger)
                     {
                         attackSeen = true;
+                        attackPoint = p;
                         Vector2 delta = p - attackAnchor;
                         aim = delta.magnitude > radius * .15f ? new Vec2(delta.x, delta.y).Normalized : new Vec2();
+                        drawAmount = Mathf.Clamp01(delta.magnitude / radius);
                         holdAttack = !ended;
                         if (ended)
                         {
@@ -184,22 +187,41 @@ namespace PetThem.Game
             holdAttack = false;
             if (Input.mousePosition.y < Screen.height * .84f)
             {
-                Vector3 point = gameCamera.ScreenToWorldPoint(Input.mousePosition);
-                aim = new Vec2(point.x - world.Position.x, point.y - world.Position.y);
+                if (Input.GetMouseButtonDown(0)) { attackAnchor = Input.mousePosition; }
+                attackPoint = Input.mousePosition;
                 holdAttack = Input.GetMouseButton(0);
-                // The punch fires on press. The arrow fires when the button comes back up, so that
-                // dragging to aim first is possible; the laser burns for as long as it is held.
-                if (Input.GetMouseButtonDown(0) && weapon == WeaponId.Punch) { queuedPunch = true; queuedAim = aim; }
+
+                if (weapon == WeaponId.Arrow)
+                {
+                    // The bow is drawn from wherever the button went down, the same gesture as the
+                    // movement stick. Pointing at the cursor would make it a click again.
+                    Vector2 pull = (Vector2)Input.mousePosition - attackAnchor;
+                    aim = pull.magnitude > radius * .15f ? new Vec2(pull.x, pull.y).Normalized : new Vec2();
+                    drawAmount = Mathf.Clamp01(pull.magnitude / radius);
+                }
+                else
+                {
+                    Vector3 point = gameCamera.ScreenToWorldPoint(Input.mousePosition);
+                    aim = new Vec2(point.x - world.Position.x, point.y - world.Position.y);
+                    // The punch swings on press; the laser burns for as long as it is held.
+                    if (Input.GetMouseButtonDown(0) && weapon == WeaponId.Punch)
+                    { queuedPunch = true; queuedAim = aim; }
+                }
             }
-            if (Input.GetKey(KeyCode.Space)) holdAttack = true;
-            if (Input.GetKeyDown(KeyCode.Space) && weapon != WeaponId.Laser)
-            { aim = new Vec2(); queuedAim = aim; queuedPunch = weapon == WeaponId.Punch; }
+            if (Input.GetKey(KeyCode.Space))
+            {
+                holdAttack = true;
+                // SPACE has nothing to pull, so it stands for a full draw at the nearest enemy.
+                if (weapon == WeaponId.Arrow) { aim = new Vec2(); drawAmount = 1; }
+            }
+            if (Input.GetKeyDown(KeyCode.Space) && weapon == WeaponId.Punch)
+            { aim = new Vec2(); queuedAim = aim; queuedPunch = true; }
         }
 
         private void ClearInput()
         {
             moveFinger = attackFinger = -1;
-            move = aim = queuedAim = new Vec2(); queuedPunch = holdAttack = false; accumulator = 0;
+            move = aim = queuedAim = new Vec2(); queuedPunch = holdAttack = false; drawAmount = 0; accumulator = 0;
             world?.CancelHeldAttack();
             if (beam != null) beam.SetActive(false);
         }
@@ -508,6 +530,7 @@ namespace PetThem.Game
                     GUI.DrawTexture(new Rect(anchor.x+delta.x-22,anchor.y+delta.y-22,44,44),Art.SoftCircle.texture);
                     GUI.color = Color.white;
                 }
+                if (weapon == WeaponId.Arrow && holdAttack) DrawBowGauge(scale);
             }
             if (started && !paused && world.State == RunState.Playing && world.HasUpgradeChoice)
                 DrawUpgradeChoices(width);
@@ -543,6 +566,42 @@ namespace PetThem.Game
                     started ? Texts.RunLog(recordingPath) : Texts.Build,small);
             }
         }
+        /// <summary>
+        /// Shows the bow being drawn: where the pull started, how far it has come, and how strong
+        /// the shot would be if let go now.
+        /// </summary>
+        /// <remarks>
+        /// The strength comes from CombatWorld.DrawPower, the same function that fires the arrow,
+        /// so the gauge cannot disagree with the shot. Below the minimum it reads as empty and the
+        /// line goes grey, which is what tells the player a tap is not a shot.
+        /// </remarks>
+        private void DrawBowGauge(float scale)
+        {
+            Vector2 anchor = new Vector2(attackAnchor.x / scale, (Screen.height - attackAnchor.y) / scale);
+            Vector2 pulled = new Vector2(attackPoint.x / scale, (Screen.height - attackPoint.y) / scale);
+            Vector2 delta = Vector2.ClampMagnitude(pulled - anchor, 64);
+            float power = world.DrawPower(drawAmount);
+            Color tint = power > 0 ? Color.Lerp(paper, coral, power) : new Color(.6f, .64f, .68f);
+
+            GUI.color = new Color(tint.r, tint.g, tint.b, .18f);
+            GUI.DrawTexture(new Rect(anchor.x - 64, anchor.y - 64, 128, 128), Art.SoftCircle.texture);
+
+            // A line of dots from the anchor to the pull, so the direction reads at a glance.
+            GUI.color = new Color(tint.r, tint.g, tint.b, .75f);
+            for (int i = 1; i <= 5; i++)
+            {
+                Vector2 at = anchor + delta * (i / 5f);
+                float dot = 5 + i * 1.6f;
+                GUI.DrawTexture(new Rect(at.x - dot, at.y - dot, dot * 2, dot * 2), Art.SoftCircle.texture);
+            }
+
+            GUI.color = new Color(.25f, .28f, .31f, .85f);
+            GUI.DrawTexture(new Rect(anchor.x - 62, anchor.y + 74, 124, 12), Texture2D.whiteTexture);
+            GUI.color = tint;
+            GUI.DrawTexture(new Rect(anchor.x - 62, anchor.y + 74, 124 * power, 12), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+        }
+
         /// <summary>
         /// The weapon is chosen before the run and cannot change during it, so the upgrades that
         /// appear later all belong to the same weapon.

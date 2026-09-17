@@ -27,6 +27,8 @@
   "arrowSpeed": 17,
   "arrowRadius": 0.45,
   "arrowPierce": 2,
+  "arrowMinDraw": 0.25,
+  "arrowMinPower": 0.55,
   "laserDamagePerSecond": 52,
   "laserRange": 8.5,
   "laserWidth": 0.75,

@@ -34,6 +34,9 @@ namespace PetThem.Combat
         // Arrow: slow, aimed, pierces a line of enemies. Rewards picking the right target.
         public float arrowDamage = 40, arrowCooldown = 0.72f, arrowSpeed = 17, arrowRadius = 0.45f;
         public int arrowPierce = 2;
+        // The bow has to be drawn. A pull shorter than arrowMinDraw is not a shot at all, and a
+        // pull that only just clears it leaves at arrowMinPower of full speed and damage.
+        public float arrowMinDraw = 0.25f, arrowMinPower = 0.55f;
         // Laser: continuous damage limited by heat rather than by a cooldown.
         public float laserDamagePerSecond = 52, laserRange = 8.5f, laserWidth = 0.75f;
         public float laserHeatPerSecond = 36, laserCoolPerSecond = 28, laserOverheatPenalty = 1.5f;
@@ -81,6 +84,10 @@ namespace PetThem.Combat
                 arenaHalfWidth <= 1 || arenaHalfHeight <= 1 || string.IsNullOrWhiteSpace(version))
                 throw new ArgumentException("Invalid limits or version.");
             if (arrowPierce < 1 || arrowPierce > 20) throw new ArgumentException("arrowPierce must be between 1 and 20.");
+            if (!Vec2.Finite(arrowMinDraw) || arrowMinDraw < 0 || arrowMinDraw >= 1)
+                throw new ArgumentException("arrowMinDraw must be at least 0 and below 1.");
+            if (!Vec2.Finite(arrowMinPower) || arrowMinPower <= 0 || arrowMinPower > 1)
+                throw new ArgumentException("arrowMinPower must be above 0 and at most 1.");
         }
     }
 
@@ -89,12 +96,20 @@ namespace PetThem.Combat
         public Vec2 move, aim;
         /// <summary>Fire once: a punch, or the release of a drawn arrow.</summary>
         public bool punch;
-        /// <summary>The attack control is held down: the laser beam is on, or an arrow is being aimed.</summary>
+        /// <summary>The attack control is held down: the laser beam is on, or an arrow is being drawn.</summary>
         public bool hold;
+        /// <summary>
+        /// How far back the attack control was pulled, from 0 to 1. Only the arrow reads it.
+        /// Callers that do not aim by dragging get a full draw.
+        /// </summary>
+        public float draw;
+
         public PlayerInput(Vec2 move, Vec2 aim, bool punch)
-        { this.move = move; this.aim = aim; this.punch = punch; this.hold = false; }
+        { this.move = move; this.aim = aim; this.punch = punch; this.hold = false; this.draw = 1; }
         public PlayerInput(Vec2 move, Vec2 aim, bool punch, bool hold)
-        { this.move = move; this.aim = aim; this.punch = punch; this.hold = hold; }
+        { this.move = move; this.aim = aim; this.punch = punch; this.hold = hold; this.draw = 1; }
+        public PlayerInput(Vec2 move, Vec2 aim, bool punch, bool hold, float draw)
+        { this.move = move; this.aim = aim; this.punch = punch; this.hold = hold; this.draw = draw; }
     }
 
     public enum RunState { Playing, Won, Lost, Abandoned }

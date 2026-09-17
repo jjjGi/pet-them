@@ -62,7 +62,7 @@ namespace PetThem.Combat
             AimFromInput(input, attacking);
             switch (Weapon)
             {
-                case WeaponId.Arrow: StepArrow(input.punch || released); break;
+                case WeaponId.Arrow: StepArrow(input.punch || released, input.draw); break;
                 case WeaponId.Laser: StepLaser(input); break;
                 default: StepPunch(input); break;
             }
@@ -106,24 +106,43 @@ namespace PetThem.Combat
         }
 
         /// <summary>
-        /// Fires on release of the attack control, or on a tap for players who do not drag.
-        /// Holding only aims, so the arrow cannot be spammed faster than its cooldown either way.
+        /// Loosed when the attack control is released, with the shot's strength taken from how far
+        /// it was pulled. A pull shorter than arrowMinDraw does nothing, so a stray tap is not a
+        /// wasted arrow and the bow has to be drawn on purpose.
         /// </summary>
-        private void StepArrow(bool firing)
+        private void StepArrow(bool firing, float draw)
         {
             if (!firing || Tick < nextArrow) return;
+            float power = DrawPower(draw);
+            if (power <= 0) return;
+
             nextArrow = Tick + Frames(config.arrowCooldown);
+            float damage = config.arrowDamage * power;
             var arrow = new Projectile
             {
                 Id = nextProjectileId++,
                 Position = Position,
-                Velocity = Facing * config.arrowSpeed,
-                Damage = config.arrowDamage,
+                Velocity = Facing * (config.arrowSpeed * power),
+                Damage = damage,
                 PierceLeft = config.arrowPierce,
             };
             projectiles.Add(arrow);
             // targetId stays 0: an arrow has no target yet, and the field means an enemy id.
-            Emit("attack", "arrow", 0, config.arrowDamage, Facing);
+            Emit("attack", "arrow", 0, damage, Facing);
+        }
+
+        /// <summary>
+        /// Turns a pull into a share of full strength: 0 when the bow was not drawn far enough,
+        /// otherwise between arrowMinPower and 1. Unity uses this to draw the power gauge, so what
+        /// the player sees is what the shot will be.
+        /// </summary>
+        public float DrawPower(float draw)
+        {
+            float pull = Math.Min(1, Math.Max(0, draw));
+            if (pull < config.arrowMinDraw) return 0;
+            float span = 1 - config.arrowMinDraw;
+            float past = span <= 0.00001f ? 1 : (pull - config.arrowMinDraw) / span;
+            return config.arrowMinPower + (1 - config.arrowMinPower) * past;
         }
 
         /// <summary>
