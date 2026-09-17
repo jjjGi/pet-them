@@ -23,7 +23,8 @@ namespace PetThem.Editor
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(path, true) };
             PlayerSettings.companyName = "PetThem";
             PlayerSettings.productName = "PET THEM!";
-            PlayerSettings.bundleVersion = "0.10.0";
+            // One source of truth, so the package version and the menu can never disagree.
+            PlayerSettings.bundleVersion = Texts.Version;
             PlayerSettings.defaultInterfaceOrientation = UIOrientation.LandscapeLeft;
             PlayerSettings.SetApplicationIdentifier(UnityEditor.Build.NamedBuildTarget.Android, "com.petthem.game");
             PlayerSettings.defaultScreenWidth = 1280;

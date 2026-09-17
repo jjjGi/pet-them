@@ -40,6 +40,12 @@ namespace PetThem.Game
         // The game's name is a brand and stays as it is in every language.
         public const string GameTitle = "PET THEM!";
 
+        /// <summary>
+        /// The one place the build number lives. The editor stamps the Android package with it and
+        /// the menu prints it, so the version on the phone and the version on screen cannot drift.
+        /// </summary>
+        public const string Version = "0.11.1";
+
         public static string Weapon(WeaponId id)
         {
             switch (id)
@@ -270,8 +276,9 @@ namespace PetThem.Game
         public static string Restart => Pick("처음부터", "RESTART");
         public static string Shop(int coins) => Pick($"상점  /  {coins}", $"SHOP  /  {coins}");
         public static string Back => Pick("< 뒤로", "< BACK");
-        public static string Build => Pick("프로토타입 0.11  /  강화 22종 + 무기 + 펫 + 보스",
-            "PROTOTYPE 0.11  /  22 UPGRADES + WEAPONS + BUDDIES + BOSS");
+        public static string Build => Pick(
+            $"프로토타입 {Version}  /  강화 22종 + 무기 + 펫 + 보스",
+            $"PROTOTYPE {Version}  /  22 UPGRADES + WEAPONS + BUDDIES + BOSS");
         public static string RunLog(string path) => Pick($"기록: {path}", $"Run log: {path}");
 
         // Level-up screen

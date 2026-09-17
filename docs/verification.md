@@ -742,3 +742,21 @@ PrototypeGame의 시작·일시정지·결과 메뉴와 무기/펫 선택을 고
 화면에서 "어디로 나갈지"를 알려주는 것은 이 줄기뿐이다.
 
 검사는 변하지 않았다. 코어는 방향을 받아쓸 뿐이고, 반전은 입력 계층의 결정이다.
+
+### 0.11.1 Android 빌드
+
+에디터가 닫혀 있어 배치 모드로 빌드했다. 컴파일 오류 0, `return code 0`.
+
+| 항목 | 값 |
+| --- | --- |
+| 파일 | `game/Builds/PetThem-development.apk`, 23,288,201 바이트 |
+| package | `com.petthem.game` |
+| minSdk / targetSdk | 25 / 36 |
+| native-code | arm64-v8a (IL2CPP) |
+| debuggable | 예 (개발 빌드) |
+
+**이 APK의 패키지 버전은 `0.10.0`으로 잘못 박혀 있다.** 내용은 0.11.1이다.
+`PrototypeSetup`의 `bundleVersion`과 화면에 찍는 `Texts.Build`가 따로 관리되고 있어서 어긋났다.
+
+`Texts.Version` 하나로 합쳤다. 에디터가 이 값으로 패키지 버전을 찍고 메뉴도 같은 값을 출력하므로
+**다음 빌드부터는 두 곳이 갈라질 수 없다.** 화면 하단 표기는 이미 맞게 나오고 있어서 재빌드는 하지 않았다.
