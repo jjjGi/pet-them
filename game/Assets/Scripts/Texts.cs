@@ -44,7 +44,7 @@ namespace PetThem.Game
         /// The one place the build number lives. The editor stamps the Android package with it and
         /// the menu prints it, so the version on the phone and the version on screen cannot drift.
         /// </summary>
-        public const string Version = "0.12.0";
+        public const string Version = "0.12.1";
 
         public static string Weapon(WeaponId id)
         {

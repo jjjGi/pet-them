@@ -36,6 +36,38 @@ namespace PetThem.Game
         private Vector2 moveAnchor, attackAnchor, movePoint, attackPoint;
         private float drawAmount;
         private float accumulator, hurtFlash;
+        private float playerStrike = -10, petStrike = -10, lastVisualTime = -1;
+        private Vector3 strikeDirection, petStrikeDirection, lastVisualPosition;
+
+        // Render poses only: collision, aim and damage remain owned by CombatWorld.
+        private void AnimateCreatures()
+        {
+            float dt = world.Time - lastVisualTime;
+            if (dt <= 0) return; // Cards and pause freeze the pose too.
+            Vector3 position = new Vector3(world.Position.x, world.Position.y, 0);
+            float moving = Mathf.Clamp01((position - lastVisualPosition).magnitude / dt / 2);
+            float gait = Mathf.Sin(world.Time * 15) * moving;
+            float breath = Mathf.Sin(world.Time * 3) * .018f;
+            float age = world.Time - playerStrike;
+            float strike = age >= 0 && age < .24f ? Mathf.Sin(age / .24f * Mathf.PI) : 0;
+            float pull = weapon == WeaponId.Arrow && holdAttack ? Mathf.Clamp01(drawAmount) : 0;
+            Vector3 facing = new Vector3(world.Facing.x, world.Facing.y, 0);
+            float laser = world.LaserActive ? .035f + .015f * Mathf.Sin(world.Time * 65) : 0;
+            player.position = position + strikeDirection * strike * (weapon == WeaponId.Punch ? .24f : -.16f)
+                - facing * (pull * .12f + laser) + Vector3.up * Mathf.Abs(gait) * .055f;
+            player.localScale = new Vector3(1 + breath + strike * .1f + pull * .08f,
+                1 - breath - strike * .08f - pull * .06f, 1);
+            player.rotation = Quaternion.Euler(0, 0, -gait * 5 - strikeDirection.x * strike * 13 + facing.x * pull * 9);
+            float petAge = world.Time - petStrike;
+            float hop = petAge >= 0 && petAge < .32f ? Mathf.Sin(petAge / .32f * Mathf.PI) : 0;
+            float orbit = world.Time * 2;
+            pet.position = position + new Vector3(Mathf.Cos(orbit) * 1.1f,
+                Mathf.Sin(orbit) * .75f + Mathf.Sin(world.Time * 5) * .06f, 0) + petStrikeDirection * hop * .3f;
+            pet.localScale = new Vector3(.62f * (1 + hop * .15f), .62f * (1 - hop * .1f), 1);
+            pet.rotation = Quaternion.Euler(0, 0, Mathf.Sin(world.Time * 5) * 5 - petStrikeDirection.x * hop * 18);
+            lastVisualPosition = position;
+            lastVisualTime = world.Time;
+        }
         private string recordingPath = "", recordingError = "";
         private GUIStyle title, heading, body, small, button, menuTitle, menuHeading, menuButton, diagnostic;
         private string fontReport = "";
@@ -99,6 +131,9 @@ namespace PetThem.Game
             pet = Creature(petChoice.ToString(), LookOf(petChoice), 0.62f, 11).transform;
             world = new CombatWorld(config, unchecked(Environment.TickCount), true, weapon, petChoice);
             started = true; paused = false; shopOpen = false; accumulator = 0; hurtFlash = 0;
+            playerStrike = petStrike = -10;
+            lastVisualTime = -1;
+            lastVisualPosition = Vector3.zero;
             ClearInput();
             recordingError = "";
             try { recorder = new RunRecorder(world); recordingPath = recorder.FilePath; }
@@ -131,9 +166,7 @@ namespace PetThem.Game
                     if (world.HasUpgradeChoice) { ClearInput(); FlushRecording(); break; }
                 }
             }
-            player.position = new Vector3(world.Position.x, world.Position.y, 0);
-            float orbit = world.Time * 2;
-            pet.position = player.position + new Vector3(Mathf.Cos(orbit) * 1.1f, Mathf.Sin(orbit) * 0.75f, 0);
+            AnimateCreatures();
             // The sprite carries its own colour, so this tints rather than replaces it.
             player.GetComponent<SpriteRenderer>().color = Time.unscaledTime < hurtFlash ? coral : Color.white;
             SynchronizeEnemies();
@@ -357,6 +390,13 @@ namespace PetThem.Game
                     views.Add(enemy.Id, view);
                 }
                 view.transform.position = new Vector3(enemy.Position.x,enemy.Position.y,0);
+                float stride = Mathf.Sin(world.Time * (enemy.Kind == EnemyKind.Runner ? 19 : 10) + enemy.Id * 1.7f);
+                float size = enemy.Radius * 2.5f;
+                float squash = stride * .035f;
+                if (enemy.Kind == EnemyKind.Boss && world.BossState == BossAction.Telegraph)
+                    squash = .16f * world.BossTelegraph;
+                view.transform.localScale = new Vector3(size * (1 + squash), size * (1 - squash), size);
+                view.transform.rotation = Quaternion.Euler(0, 0, stride * (enemy.Kind == EnemyKind.Boss ? 2 : 5));
                 // A chilled enemy is tinted towards Bori's blue so the slow is visible.
                 // The sprite is already coloured, so a chilled enemy is tinted rather than recoloured.
                 view.GetComponent<SpriteRenderer>().color = enemy.Slowed
@@ -444,7 +484,6 @@ namespace PetThem.Game
                 droneViews[i].transform.rotation = Quaternion.Euler(0, 0, world.Time * 220);
                 droneViews[i].GetComponent<SpriteRenderer>().color =
                     drone.Fired ? paper : KindColor(UpgradeKind.Friend);
-                if (drone.Fired) ShowDroneShot(drone);
             }
             for (int i = 0; i < orbViews.Count; i++)
             {
@@ -549,6 +588,22 @@ namespace PetThem.Game
                 return;
             }
             if (e.type != "attack") return;
+            if (e.source == "drone")
+            {
+                // Consume each simulation step's event once, even across slow or fast render frames.
+                foreach (Drone drone in world.Drones) if (drone.Fired) ShowDroneShot(drone);
+                return;
+            }
+            if (e.source == "punch" || e.source == "arrow")
+            {
+                playerStrike = world.Time;
+                strikeDirection = new Vector3(e.x,e.y,0).normalized;
+            }
+            if (e.source == "pet")
+            {
+                petStrike = world.Time;
+                petStrikeDirection = (new Vector3(e.x,e.y,0) - pet.position).normalized;
+            }
             // The arrow and the beam are drawn from world state every frame, not as a one-off flash.
             if (e.source == "arrow" || e.source == "laser") return;
             GameObject fx;
@@ -556,19 +611,20 @@ namespace PetThem.Game
             {
                 fx = new GameObject("Punch");
                 fx.transform.SetParent(transform);
-                fx.transform.position = player.position + new Vector3(e.x,e.y,0) * world.PunchRange * .5f;
+                fx.transform.position = new Vector3(world.Position.x,world.Position.y,0) + new Vector3(e.x,e.y,0) * world.PunchRange * .5f;
                 // The ring sits at 0.4 of the sprite, so this draws it at the real punch reach.
                 fx.transform.localScale = Vector3.one * (world.PunchRange / .4f);
                 var r = fx.AddComponent<SpriteRenderer>(); r.sprite = Art.Ring;
                 r.color = new Color(mint.r,mint.g,mint.b,.45f); r.sortingOrder = 8;
             }
-            else
+            else if (e.source == "pet")
             {
                 Vector2 from = new Vector2(pet.position.x,pet.position.y);
                 Vector2 to = new Vector2(e.x,e.y), delta = to - from;
                 fx = RectSprite("Pet beam", (from + to) / 2, new Vector2(delta.magnitude,.07f), mint, 9);
                 fx.transform.rotation = Quaternion.Euler(0,0,Mathf.Atan2(delta.y,delta.x) * Mathf.Rad2Deg);
             }
+            else return;
             transient.Add(fx); transientEnds.Add(Time.unscaledTime + .12f);
         }
         /// <summary>
