@@ -1172,6 +1172,18 @@ Check("every id the player can see is translated in every language", () =>
             Translated(Texts.TwistTitle(twist), twist.ToString());
             Translated(Texts.TwistDescription(twist), twist.ToString());
         }
+        // The attack lesson differs per weapon, so every pair has to be written, not just every
+        // lesson. None is the coach saying nothing and has no line.
+        foreach (CoachLesson lesson in Enum.GetValues(typeof(CoachLesson)))
+        {
+            if (lesson == CoachLesson.None) continue;
+            foreach (WeaponId held in Enum.GetValues(typeof(WeaponId)))
+            {
+                Translated(Texts.CoachLine(lesson, held), lesson.ToString());
+                Translated(Texts.CoachLine(lesson, held), held.ToString());
+            }
+        }
+        True(!string.IsNullOrWhiteSpace(Texts.CoachReplay));
 
         // A sample of the screen text, so a language that is only half filled in is caught.
         foreach (string line in new[]
@@ -1209,6 +1221,151 @@ Check("every id the player can see is translated in every language", () =>
     True(Texts.Current == Language.Korean);
     Texts.UseSystemLanguage(false);
     True(Texts.Current == Language.English);
+});
+Check("the coach teaches one thing at a time and stops when it is learned", () =>
+{
+    var coach = new Coach();
+    coach.Begin(WeaponId.Punch);
+    True(coach.Lesson == CoachLesson.Move);
+
+    // Standing still never clears it, however long the run goes on.
+    for (int i = 0; i < 600; i++) coach.Observe(i * CombatWorld.StepSeconds, 0, 0, 999, false);
+    True(coach.Lesson == CoachLesson.Move);
+
+    coach.Observe(10, Coach.MoveDistance, 0, 999, false);
+    True(coach.Lesson == CoachLesson.Attack);
+
+    coach.Observe(11, 0, Coach.AttackKills - 1, 999, false);
+    True(coach.Lesson == CoachLesson.Attack);
+    coach.Observe(12, 0, Coach.AttackKills, 999, false);
+    True(coach.Lesson == CoachLesson.None);
+
+    // Walking a step at a time adds up to the same distance, not to some drifted total.
+    var slow = new Coach();
+    slow.Begin(WeaponId.Punch);
+    float walked = 0;
+    for (int i = 0; i < 1000 && slow.Lesson == CoachLesson.Move; i++)
+    { slow.Observe(i * .1f, .05f, 0, 999, false); walked += .05f; }
+    True(slow.Lesson != CoachLesson.Move);
+    True(walked > Coach.MoveDistance - .06f && walked < Coach.MoveDistance + .06f);
+});
+Check("the bow lesson answers a pull that did not fire, and only the bow", () =>
+{
+    var coach = new Coach();
+    coach.Begin(WeaponId.Arrow);
+    coach.Observe(1, Coach.MoveDistance, 0, 999, false);
+    True(coach.Lesson == CoachLesson.Attack);
+
+    // One short pull is a slip. Two is a player who thinks the bow is broken.
+    coach.ShortDraw();
+    True(coach.Lesson == CoachLesson.Attack);
+    for (int i = 1; i < Coach.ShortDrawsBeforeNudge; i++) coach.ShortDraw();
+    True(coach.Lesson == CoachLesson.Draw);
+
+    // An arrow that leaves settles it, whatever happens afterwards.
+    coach.ArrowFired();
+    True(coach.Lesson == CoachLesson.Attack);
+    for (int i = 0; i < 10; i++) coach.ShortDraw();
+    True(coach.Lesson == CoachLesson.Attack);
+
+    // Nothing else in the game has a draw to fall short of.
+    foreach (WeaponId held in new[] { WeaponId.Punch, WeaponId.Laser })
+    {
+        var other = new Coach();
+        other.Begin(held);
+        other.Observe(1, Coach.MoveDistance, 0, 999, false);
+        for (int i = 0; i < 10; i++) other.ShortDraw();
+        True(other.Lesson == CoachLesson.Attack);
+    }
+
+    // The bow lesson is urgent enough to come before the walking one: the player is failing now.
+    var stuck = new Coach();
+    stuck.Begin(WeaponId.Arrow);
+    for (int i = 0; i < Coach.ShortDrawsBeforeNudge; i++) stuck.ShortDraw();
+    True(stuck.Lesson == CoachLesson.Draw);
+});
+Check("announcements show, expire, and outrank the standing lessons", () =>
+{
+    var coach = new Coach();
+    coach.Begin(WeaponId.Punch);
+    coach.Observe(20, 0, 0, 999, false);
+    True(coach.Lesson == CoachLesson.Move);
+
+    coach.UpgradeTaken(20);
+    coach.Observe(20, 0, 0, 999, false);
+    True(coach.Lesson == CoachLesson.Upgrade);
+    coach.Observe(20 + Coach.UpgradeSeconds - .1f, 0, 0, 999, false);
+    True(coach.Lesson == CoachLesson.Upgrade);
+    coach.Observe(20 + Coach.UpgradeSeconds, 0, 0, 999, false);
+    True(coach.Lesson == CoachLesson.Move);
+
+    // Taking a second upgrade does not bring the lesson back.
+    coach.UpgradeTaken(40);
+    coach.Observe(40, 0, 0, 999, false);
+    True(coach.Lesson == CoachLesson.Move);
+
+    // The warning goes up before the boss walks in. Once it is standing there it is too late.
+    coach.Observe(108, 0, 0, Coach.BossLeadSeconds + 1, false);
+    True(coach.Lesson == CoachLesson.Move);
+    coach.Observe(109, 0, 0, Coach.BossLeadSeconds, false);
+    True(coach.Lesson == CoachLesson.Boss);
+    coach.Observe(109 + Coach.BossSeconds, 0, 0, 0, true);
+    True(coach.Lesson == CoachLesson.Move);
+
+    // A boss met without ever seeing the countdown -- a summon, a reload -- does not warn late.
+    var late = new Coach();
+    late.Begin(WeaponId.Punch);
+    late.Observe(130, 0, 0, 0, true);
+    True(late.Lesson == CoachLesson.Move);
+
+    // The countdown floors at zero and stays there for the rest of the run, so a boss that is
+    // already dead must not read as one twelve seconds out -- even when the caller has stopped
+    // reporting it as arrived, which is exactly what happens the moment it is killed.
+    var after = new Coach();
+    after.Begin(WeaponId.Punch);
+    for (int i = 0; i < 100; i++)
+    {
+        after.Observe(130 + i, 0, 0, 0, false);
+        // Checked every step, not once at the end: a warning that went up wrongly would expire
+        // on its own within eight seconds and a check that only looked afterwards would miss it.
+        True(after.Lesson == CoachLesson.Move);
+    }
+});
+Check("what the coach has taught survives between runs", () =>
+{
+    var coach = new Coach();
+    coach.Begin(WeaponId.Laser);
+    coach.Observe(5, Coach.MoveDistance, Coach.AttackKills, 999, false);
+    True(!coach.Finished);
+    True(coach.Learned != 0);
+
+    // Quitting and coming back resumes at the lesson that was still open.
+    var resumed = new Coach(coach.Learned);
+    resumed.Begin(WeaponId.Laser);
+    True(resumed.Lesson == CoachLesson.None);
+    True(resumed.Learned == coach.Learned);
+
+    // A new run does not re-teach what the last one covered.
+    coach.Begin(WeaponId.Laser);
+    coach.Observe(0, 0, 0, 999, false);
+    True(coach.Lesson == CoachLesson.None);
+
+    // Finishing takes all four, and a finished coach stays finished.
+    coach.UpgradeTaken(10);
+    coach.Observe(10 + Coach.UpgradeSeconds, 0, 0, Coach.BossLeadSeconds, false);
+    coach.Observe(10 + Coach.UpgradeSeconds + Coach.BossSeconds, 0, 0, 0, true);
+    True(coach.Finished);
+    True(new Coach(coach.Learned).Finished);
+
+    // A save written by a version with more lessons cannot silence the ones this version has.
+    True(new Coach(int.MaxValue).Learned == coach.Learned);
+    True(new Coach(-1).Learned == coach.Learned);
+
+    // And the player can ask for all of it again.
+    coach.Reset();
+    True(coach.Learned == 0);
+    True(!coach.Finished);
+    True(coach.Lesson == CoachLesson.Move);
 });
 Console.WriteLine(passed + " checks passed.");
 return;

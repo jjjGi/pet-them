@@ -37,6 +37,10 @@ namespace PetThem.Game
         private float drawAmount;
         private float accumulator, hurtFlash;
         private GameAudio gameAudio;
+        private Coach coach;
+        private Vec2 coachPosition;
+        private int coachLearned;
+        private const string CoachKey = "coach.learned";
         private Transform attackPaw;
         private float playerStrike = -10, petStrike = -10, lastVisualTime = -1;
         private Vector3 strikeDirection, petStrikeDirection, lastVisualPosition;
@@ -78,7 +82,7 @@ namespace PetThem.Game
             lastVisualTime = world.Time;
         }
         private string recordingPath = "", recordingError = "";
-        private GUIStyle title, heading, body, small, button, menuTitle, menuHeading, menuButton, diagnostic;
+        private GUIStyle title, heading, body, small, button, menuTitle, menuHeading, menuButton, diagnostic, coaching;
         private string fontReport = "";
         private bool koreanUnavailable;
 
@@ -109,6 +113,8 @@ namespace PetThem.Game
             config = JsonUtility.FromJson<BalanceConfig>(asset.text);
             config.Validate();
             Texts.UseSystemLanguage(Application.systemLanguage == SystemLanguage.Korean);
+            coachLearned = PlayerPrefs.GetInt(CoachKey, 0);
+            coach = new Coach(coachLearned);
             profile = ProfileStore.Load();
             if (!profile.IsUnlocked(petChoice)) petChoice = PlayerProfile.StarterPet;
             CreateArena();
@@ -153,6 +159,8 @@ namespace PetThem.Game
             if (pet != null) Destroy(pet.gameObject);
             pet = Creature(petChoice.ToString(), LookOf(petChoice), 0.62f, 11).transform;
             world = new CombatWorld(config, unchecked(Environment.TickCount), true, weapon, petChoice, true);
+            coach.Begin(weapon);
+            coachPosition = world.Position;
             started = true; paused = false; shopOpen = false; accumulator = 0; hurtFlash = 0;
             playerStrike = petStrike = -10;
             lastVisualTime = -1;
@@ -182,6 +190,7 @@ namespace PetThem.Game
                 {
                     world.Step(new PlayerInput(move, queuedPunch ? queuedAim : aim, queuedPunch, holdAttack, drawAmount));
                     queuedPunch = false;
+                    TeachFromStep();
                     RecordEvents();
                     foreach (CombatEvent e in world.Events) ShowEvent(e);
                     accumulator -= CombatWorld.StepSeconds;
@@ -244,6 +253,10 @@ namespace PetThem.Game
                         holdAttack = !ended;
                         if (ended)
                         {
+                            // A pull too short to fire is the bow's one trap: nothing happens and
+                            // nothing on screen says why. DrawPower is the function that fires the
+                            // arrow, so this reads the same verdict the shot will get.
+                            if (weapon == WeaponId.Arrow && world.DrawPower(drawAmount) <= 0) coach.ShortDraw();
                             // The arrow leaves on release, so queueing a shot here would fire it twice.
                             queuedPunch = touch.phase == TouchPhase.Ended && weapon == WeaponId.Punch;
                             queuedAim = aim; attackFinger = -1;
@@ -275,6 +288,7 @@ namespace PetThem.Game
                     Vector2 pull = (Vector2)Input.mousePosition - attackAnchor;
                     aim = pull.magnitude > radius * .15f ? new Vec2(-pull.x, -pull.y).Normalized : new Vec2();
                     drawAmount = Mathf.Clamp01(pull.magnitude / radius);
+                    if (Input.GetMouseButtonUp(0) && world.DrawPower(drawAmount) <= 0) coach.ShortDraw();
                 }
                 else
                 {
@@ -295,6 +309,39 @@ namespace PetThem.Game
             { aim = new Vec2(); queuedAim = aim; queuedPunch = true; }
         }
 
+        /// <summary>
+        /// Hands the coach one step of the world and writes down anything it just learned.
+        /// </summary>
+        /// <remarks>
+        /// Saved the moment a lesson clears rather than when the run ends, because the player who
+        /// puts the phone down halfway through the first fight is exactly the one who should not be
+        /// taught how to walk all over again.
+        ///
+        /// Everything it reads is a value the HUD is already printing, so the coach can never be
+        /// teaching one game while the screen shows another.
+        /// </remarks>
+        private void TeachFromStep()
+        {
+            if (coach.Finished) return;
+            Vec2 was = coachPosition;
+            coachPosition = world.Position;
+            coach.Observe(world.Time, (coachPosition - was).Length, world.Kills,
+                world.SecondsToBoss, world.Boss != null || world.BossDefeated);
+            if (coach.Learned == coachLearned) return;
+            coachLearned = coach.Learned;
+            PlayerPrefs.SetInt(CoachKey, coachLearned);
+            PlayerPrefs.Save();
+        }
+
+        /// <summary>Forgets the lessons, for a player who wants them again or is handing the phone over.</summary>
+        private void ForgetCoaching()
+        {
+            coach.Reset();
+            coachLearned = 0;
+            PlayerPrefs.SetInt(CoachKey, 0);
+            PlayerPrefs.Save();
+        }
+
         private void ClearInput()
         {
             moveFinger = attackFinger = -1;
@@ -306,6 +353,7 @@ namespace PetThem.Game
         {
             if (paused || index < 0 || index >= world.UpgradeChoices.Count) return;
             if (!world.ChooseUpgrade(world.UpgradeChoices[index].Id)) return;
+            coach.UpgradeTaken(world.Time);
             gameAudio.Sound("upgrade");
             RecordEvents(); FlushRecording(); ClearInput();
         }
@@ -624,6 +672,7 @@ namespace PetThem.Game
                 foreach (Drone drone in world.Drones) if (drone.Fired) ShowDroneShot(drone);
                 return;
             }
+            if (e.source == "arrow") coach.ArrowFired();
             if (e.source == "punch" || e.source == "arrow")
             {
                 playerStrike = world.Time;
@@ -684,6 +733,7 @@ namespace PetThem.Game
             menuTitle = new GUIStyle(title) { fontSize = 44, wordWrap = true };
             menuHeading = new GUIStyle(heading) { fontSize = 24, wordWrap = true };
             menuButton = new GUIStyle(button) { wordWrap = true };
+            coaching = new GUIStyle(body) { alignment = TextAnchor.MiddleCenter };
 
             // Deliberately keeps the built-in font: if the chosen one cannot draw, this line is
             // the only thing on screen that can say so.
@@ -855,6 +905,7 @@ namespace PetThem.Game
                     GUI.color = Color.white;
                 }
                 if (weapon == WeaponId.Arrow && holdAttack) DrawBowGauge(scale);
+                DrawCoaching(width);
             }
             if (started && !paused && world.State == RunState.Playing && world.HasUpgradeChoice)
                 DrawUpgradeChoices(width);
@@ -862,6 +913,30 @@ namespace PetThem.Game
             if (onMenu && shopOpen) { DrawShop(width); return; }
             if (onMenu) DrawMainMenu(width);
         }
+        /// <summary>
+        /// One line of coaching over the arena, for as long as the lesson behind it is unlearned.
+        /// </summary>
+        /// <remarks>
+        /// Not a modal sequence of steps: the run does not stop, nothing has to be dismissed, and a
+        /// player who already knows the controls clears every lesson by playing and never reads a
+        /// word of it. That is the whole design. A tutorial that has to be sat through is a tutorial
+        /// the second player on the same phone has to sit through again.
+        ///
+        /// It sits below the middle of the screen, between the twist banner at the top and the boss
+        /// bar underneath, so it never covers either.
+        /// </remarks>
+        private void DrawCoaching(float width)
+        {
+            if (coach.Finished || paused || world.State != RunState.Playing) return;
+            CoachLesson lesson = coach.Lesson;
+            if (lesson == CoachLesson.None) return;
+            // Two lines tall, because the English attack lessons are long enough to wrap and
+            // MiddleCenter keeps a one-line message looking the same either way.
+            var box = new Rect(width / 2 - 340, 474, 680, 58);
+            Panel(box, new Color(ink.r, ink.g, ink.b, .82f));
+            GUI.Label(box, Texts.CoachLine(lesson, weapon), coaching);
+        }
+
         /// <summary>
         /// Shows the bow being drawn: where the pull started, how far it has come, and how strong
         /// the shot would be if let go now.
@@ -975,6 +1050,13 @@ namespace PetThem.Game
             if (GUILayout.Button(Texts.MusicSetting(gameAudio.MusicEnabled),menuButton,GUILayout.MinHeight(40))) gameAudio.ToggleMusic();
             if (GUILayout.Button(Texts.SoundSetting(gameAudio.EffectsEnabled),menuButton,GUILayout.MinHeight(40))) gameAudio.ToggleEffects();
             GUILayout.EndHorizontal();
+            GUILayout.Space(8);
+            // Offered once anything has been learned: before that the lessons are already on
+            // their way, and a button promising them would be promising what is about to happen.
+            // Not gated on finishing them all, because the boss lesson needs a run that survives
+            // to the two-minute mark and handing the phone to someone else should not.
+            if (coach.Learned != 0 && GUILayout.Button(Texts.CoachReplay,menuButton,GUILayout.MinHeight(40)))
+                ForgetCoaching();
             GUILayout.Label(recordingError.Length > 0 ? recordingError :
                 started ? Texts.RunLog(recordingPath) : Texts.Build,small);
             // Drawn with the built-in font on purpose, so it survives a font that cannot draw.

@@ -1,4 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup><ItemGroup><ProjectReference Include="../CombatCore/CombatCore.csproj" />
     <!-- The player-facing strings live in the Unity folder but have no UnityEngine dependency,
          so they can be checked for gaps here. -->
-    <Compile Include="../../game/Assets/Scripts/Texts.cs" /></ItemGroup></Project>
+    <Compile Include="../../game/Assets/Scripts/Texts.cs" />
+    <!-- The tutorial decides when each lesson fires. That is only worth having if it can be
+         run without the editor, so it has no UnityEngine dependency either. -->
+    <Compile Include="../../game/Assets/Scripts/Coach.cs" /></ItemGroup></Project>

@@ -44,7 +44,7 @@ namespace PetThem.Game
         /// The one place the build number lives. The editor stamps the Android package with it and
         /// the menu prints it, so the version on the phone and the version on screen cannot drift.
         /// </summary>
-        public const string Version = "0.14.0";
+        public const string Version = "0.15.0";
         public static string MusicSetting(bool enabled) => Pick("배경음악", "Music") + (enabled ? " ON" : " OFF");
         public static string SoundSetting(bool enabled) => Pick("효과음", "Sound") + (enabled ? " ON" : " OFF");
 
@@ -69,6 +69,52 @@ namespace PetThem.Game
                 default: return id.ToString();
             }
         }
+
+        /// <summary>
+        /// The coach's one line, for the lesson the player is currently failing to have learned.
+        /// </summary>
+        /// <remarks>
+        /// Written as instructions rather than descriptions: this appears mid-fight, over the
+        /// arena, and the player has a thumb on the screen. The attack lesson is per weapon because
+        /// the three do not share a gesture -- the bow in particular cannot be guessed from any
+        /// other game, which is why it also gets a second line of its own when a pull falls short.
+        /// </remarks>
+        public static string CoachLine(CoachLesson lesson, WeaponId weapon)
+        {
+            switch (lesson)
+            {
+                case CoachLesson.Move:
+                    return Pick("왼쪽 화면에 엄지를 올리고 끌어 보세요",
+                        "Put a thumb on the left side and drag");
+                case CoachLesson.Attack:
+                    switch (weapon)
+                    {
+                        case WeaponId.Arrow:
+                            return Pick("오른쪽을 눌러 뒤로 당겼다 놓으세요. 당긴 반대쪽으로 날아갑니다",
+                                "Press on the right, pull back, let go. It flies the way you did not pull");
+                        case WeaponId.Laser:
+                            return Pick("오른쪽을 누르고 있으면 빔이 나갑니다. 열이 100이면 잠깁니다",
+                                "Hold on the right to burn. At 100 heat it locks until it cools");
+                        case WeaponId.Punch:
+                            return Pick("오른쪽을 탭해서 때리세요. 끌면 그 방향으로 휘두릅니다",
+                                "Tap on the right to swing. Drag to swing that way");
+                        default: return weapon.ToString();
+                    }
+                case CoachLesson.Draw:
+                    return Pick("더 당기세요. 살짝 누르는 것은 발사가 아닙니다",
+                        "Pull further. A tap is not a shot");
+                case CoachLesson.Upgrade:
+                    return Pick("고른 강화는 이번 판에만 남습니다. 일시정지에서 모아 볼 수 있습니다",
+                        "Upgrades last this run only. The pause screen lists what you have");
+                case CoachLesson.Boss:
+                    return Pick("보스가 옵니다. 바닥에 도형이 뜨면 그 자리에서 비키세요",
+                        "The boss is coming. When a shape lights the ground, leave that ground");
+                default: return lesson.ToString();
+            }
+        }
+
+        public static string CoachReplay =>
+            Pick("조작 다시 배우기", "LEARN THE CONTROLS AGAIN");
 
         public static string Pet(PetId id)
         {
