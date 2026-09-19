@@ -1110,6 +1110,28 @@ if (glyphs != null) title.font = ... = glyphs;
 - Unity 소스 컴파일(실제 Unity 6000.3.24f1 DLL 기준, Assets/Scripts + Assets/Editor) 경고 0 / 오류 0.
 - 공통 전투 코어 변경 없음. 실험실 회귀 검사 불필요.
 
+### APK 크기 — 개발 빌드는 전달 한도를 넘는다
+
+0.15.0 개발 APK는 **31.2 MiB**로, 대화로 파일을 전달할 때의 30 MiB 한도를 넘어 전달에 실패했다.
+직전 0.14.0 개발 APK는 22.4 MB였다. 설정은 그대로다(`stripEngineCode: 1`, `AndroidTargetArchitectures: 2` = ARM64 단독),
+네이티브 라이브러리도 정상 압축돼 있다(libunity.so 24MB → 9.3MB). **9 MB가 늘어난 이유는 규명하지 못했다.**
+
+같은 커밋을 `BuildOptions.None`으로 빌드하면 **16.7 MB**다.
+
+| | 개발 빌드 | 릴리스 빌드 |
+|---|---|---|
+| APK | 31.2 MiB | 16.7 MiB |
+| libunity.so | 24.0 MB | 11.4 MB |
+| libil2cpp.so | 12.2 MB | 11.8 MB |
+| classes.dex | 7.5 MB | 6.4 MB |
+
+차이는 거의 전부 `libunity.so`다. 개발 빌드가 프로파일러와 디버그 심볼을 얹기 때문이다.
+
+**사용자에게 전달한 0.15.0은 릴리스 빌드다.** 게임 코드는 같은 커밋이고 버전·패키지명도 같다
+(`0.15.0` / `com.petthem.game`). 프로파일러가 없으므로 프레임 측정에는 오히려 유리하지만,
+개발 콘솔이 없어 크래시 로그를 볼 수 없다. `PrototypeSetup.BuildAndroid`는 개발 빌드 그대로 두었다.
+릴리스 빌드 메뉴를 따로 둘지는 사용자가 정할 일이다.
+
 ### 아직 사람이 확인하지 않은 것
 
 **수업이 실제로 읽히는 위치에 뜨는지 확인되지 않았다.** 화면 아래쪽 가운데(720 기준 y=482)에
