@@ -36,6 +36,8 @@ namespace PetThem.Game
         private Vector2 moveAnchor, attackAnchor, movePoint, attackPoint;
         private float drawAmount;
         private float accumulator, hurtFlash;
+        private GameAudio gameAudio;
+        private Transform attackPaw;
         private float playerStrike = -10, petStrike = -10, lastVisualTime = -1;
         private Vector3 strikeDirection, petStrikeDirection, lastVisualPosition;
 
@@ -58,6 +60,13 @@ namespace PetThem.Game
             player.localScale = new Vector3(1 + breath + strike * .1f + pull * .08f,
                 1 - breath - strike * .08f - pull * .06f, 1);
             player.rotation = Quaternion.Euler(0, 0, -gait * 5 - strikeDirection.x * strike * 13 + facing.x * pull * 9);
+            // A separate paw makes the attack readable even on a small phone screen.
+            float extension = weapon == WeaponId.Punch ? strike * .75f : -pull * .22f - strike * .12f;
+            attackPaw.gameObject.SetActive(started);
+            Vector3 pawDirection = strike > 0 ? strikeDirection : facing;
+            attackPaw.position = position + pawDirection * (.48f + extension) + Vector3.up * .08f;
+            attackPaw.rotation = Quaternion.Euler(0, 0, Mathf.Atan2(pawDirection.y, pawDirection.x) * Mathf.Rad2Deg - 90);
+            attackPaw.localScale = Vector3.one * (.55f + strike * .18f);
             float petAge = world.Time - petStrike;
             float hop = petAge >= 0 && petAge < .32f ? Mathf.Sin(petAge / .32f * Mathf.PI) : 0;
             float orbit = world.Time * 2;
@@ -88,6 +97,8 @@ namespace PetThem.Game
             Input.simulateMouseWithTouches = false;
             gameCamera = Camera.main;
             if (gameCamera == null) gameCamera = new GameObject("Main Camera").AddComponent<Camera>();
+            if (FindFirstObjectByType<AudioListener>() == null) gameCamera.gameObject.AddComponent<AudioListener>();
+            gameAudio = gameObject.AddComponent<GameAudio>();
             gameCamera.tag = "MainCamera";
             gameCamera.orthographic = true;
             gameCamera.transform.position = new Vector3(0, 0, -10);
@@ -103,6 +114,18 @@ namespace PetThem.Game
             CreateArena();
             player = Creature("You", Look.Player, 1.0f, 10).transform;
             pet = Creature("Mochi", Look.Mochi, 0.62f, 11).transform;
+            attackPaw = new GameObject("Animated attack paw").transform;
+            attackPaw.SetParent(transform);
+            var palm = RectSprite("Palm", Vector2.zero, new Vector2(.7f,.7f), paper, 13);
+            palm.GetComponent<SpriteRenderer>().sprite = Art.SoftCircle;
+            palm.transform.SetParent(attackPaw, false);
+            for (int i = 0; i < 3; i++)
+            {
+                var toe = RectSprite("Toe", new Vector2((i-1)*.25f,.34f), new Vector2(.3f,.34f), mint, 14);
+                toe.GetComponent<SpriteRenderer>().sprite = Art.SoftCircle;
+                toe.transform.SetParent(attackPaw, false);
+            }
+            attackPaw.gameObject.SetActive(false);
             beam = RectSprite("Laser beam", Vector2.zero, Vector2.one, coral, 9);
             beam.SetActive(false);
             // Under the creatures, so the warning never hides what is standing on it.
@@ -174,6 +197,8 @@ namespace PetThem.Game
             SynchronizeCompanions();
             DrawBeam();
             DrawBossWarning();
+            gameAudio.SetCombat(started && !paused && !world.HasUpgradeChoice && world.State == RunState.Playing,
+                world.LaserActive, world.Boss != null);
             for (int i = transient.Count - 1; i >= 0; i--)
                 if (Time.unscaledTime >= transientEnds[i])
                 { Destroy(transient[i]); transient.RemoveAt(i); transientEnds.RemoveAt(i); }
@@ -281,6 +306,7 @@ namespace PetThem.Game
         {
             if (paused || index < 0 || index >= world.UpgradeChoices.Count) return;
             if (!world.ChooseUpgrade(world.UpgradeChoices[index].Id)) return;
+            gameAudio.Sound("upgrade");
             RecordEvents(); FlushRecording(); ClearInput();
         }
         /// <summary>
@@ -290,6 +316,7 @@ namespace PetThem.Game
         private void BankRun()
         {
             if (world.State != RunState.Won && world.State != RunState.Lost) return;
+            gameAudio.Sound(world.State == RunState.Won ? "win" : "lose");
             lastRunCoins = world.Coins;
             profile.AddRunReward(lastRunCoins);
             ProfileStore.Save(profile);
@@ -573,6 +600,9 @@ namespace PetThem.Game
 
         private void ShowEvent(CombatEvent e)
         {
+            if (e.type == "hurt") gameAudio.Sound("hurt");
+            if (e.type == "boss_telegraph") gameAudio.Sound("boss");
+            if (e.type == "attack") gameAudio.Sound(e.source);
             if (e.type == "hurt") hurtFlash = Time.unscaledTime + .15f;
             if (e.type == "heal")
             {
@@ -919,6 +949,10 @@ namespace PetThem.Game
                 GUILayout.Button(Texts.LanguageName(Texts.Next),menuButton,GUILayout.MinHeight(40)))
                 Texts.Use(Texts.Next);
             GUILayout.Space(8);
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button(Texts.MusicSetting(gameAudio.MusicEnabled),menuButton,GUILayout.MinHeight(40))) gameAudio.ToggleMusic();
+            if (GUILayout.Button(Texts.SoundSetting(gameAudio.EffectsEnabled),menuButton,GUILayout.MinHeight(40))) gameAudio.ToggleEffects();
+            GUILayout.EndHorizontal();
             GUILayout.Label(recordingError.Length > 0 ? recordingError :
                 started ? Texts.RunLog(recordingPath) : Texts.Build,small);
             // Drawn with the built-in font on purpose, so it survives a font that cannot draw.
