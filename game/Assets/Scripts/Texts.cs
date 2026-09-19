@@ -44,7 +44,7 @@ namespace PetThem.Game
         /// The one place the build number lives. The editor stamps the Android package with it and
         /// the menu prints it, so the version on the phone and the version on screen cannot drift.
         /// </summary>
-        public const string Version = "0.13.0";
+        public const string Version = "0.14.0";
         public static string MusicSetting(bool enabled) => Pick("배경음악", "Music") + (enabled ? " ON" : " OFF");
         public static string SoundSetting(bool enabled) => Pick("효과음", "Sound") + (enabled ? " ON" : " OFF");
 
@@ -252,6 +252,48 @@ namespace PetThem.Game
         }
 
         public static string BossEnraged => Pick("격노", "ENRAGED");
+
+        /// <summary>The name of the condition this run is played under.</summary>
+        public static string TwistTitle(TwistId twist)
+        {
+            switch (twist)
+            {
+                case TwistId.Calm: return Pick("평범한 날", "AN ORDINARY DAY");
+                case TwistId.Swarm: return Pick("우글우글", "SWARMING");
+                case TwistId.Swift: return Pick("발 빠른 무리", "QUICK FEET");
+                case TwistId.Armored: return Pick("단단한 껍질", "THICK HIDES");
+                case TwistId.EarlyBoss: return Pick("이른 방문", "EARLY VISITOR");
+                case TwistId.Harsh: return Pick("매서운 이빨", "SHARP TEETH");
+                default: return twist.ToString();
+            }
+        }
+
+        /// <summary>What the twist actually does, in the player's terms rather than in multipliers.</summary>
+        public static string TwistDescription(TwistId twist)
+        {
+            switch (twist)
+            {
+                case TwistId.Calm:
+                    return Pick("특별한 일 없는 하루입니다.", "Nothing out of the ordinary.");
+                case TwistId.Swarm:
+                    return Pick("훨씬 많이 몰려옵니다. 대신 하나하나는 약합니다.",
+                        "Far more of them, and each one frailer.");
+                case TwistId.Swift:
+                    return Pick("전부 훨씬 빠릅니다. 도망칠 틈이 좁습니다.",
+                        "All of them move much faster. Less room to run.");
+                case TwistId.Armored:
+                    return Pick("수는 적지만 좀처럼 쓰러지지 않습니다.",
+                        "Fewer of them, and they take much longer to drop.");
+                case TwistId.EarlyBoss:
+                    return Pick("큰 놈이 훨씬 일찍 찾아옵니다. 준비할 시간이 모자랍니다.",
+                        "The big one arrives far earlier, before your build is ready.");
+                case TwistId.Harsh:
+                    return Pick("맞으면 훨씬 아픕니다.", "Everything hits much harder.");
+                default: return twist.ToString();
+            }
+        }
+
+        public static string TwistReward => Pick("코인 추가", "bonus coins");
         public static string GuardStatus(int percent, int seconds) =>
             Pick($"코코  /  피해 -{percent}%   /   {seconds}초 뒤 회복",
                 $"COCO  /  -{percent}% contact   /   heal in {seconds}s");
@@ -293,8 +335,8 @@ namespace PetThem.Game
         public static string Shop(int coins) => Pick($"상점  /  {coins}", $"SHOP  /  {coins}");
         public static string Back => Pick("< 뒤로", "< BACK");
         public static string Build => Pick(
-            $"프로토타입 {Version}  /  강화 22종 + 무기 + 펫 + 보스 패턴",
-            $"PROTOTYPE {Version}  /  22 UPGRADES + WEAPONS + BUDDIES + BOSS PATTERNS");
+            $"프로토타입 {Version}  /  이변 6종 + 강화 22종 + 무기 + 펫 + 보스",
+            $"PROTOTYPE {Version}  /  6 TWISTS + 22 UPGRADES + WEAPONS + BUDDIES + BOSS");
         public static string RunLog(string path) => Pick($"기록: {path}", $"Run log: {path}");
 
         // Level-up screen

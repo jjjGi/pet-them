@@ -14,8 +14,10 @@ namespace PetThem.Game
             public bool progressionEnabled;
             public string progressionVersion = "kill-xp-1";
             // The weapon and the pet decide which upgrades can appear, so a run is only
-            // comparable to another run that started with the same pair.
-            public string weapon, pet;
+            // comparable to another run that started with the same pair. The twist rewrites the
+            // numbers the run is played with, so it has to be on that list too -- configJson below
+            // already holds the twisted values, and this says which twist produced them.
+            public string weapon, pet, twist;
             public string runId, startedUtc, buildVersion, platform, unityVersion, configJson;
             public int seed;
             public float fixedStep = CombatWorld.StepSeconds;
@@ -33,7 +35,7 @@ namespace PetThem.Game
                 runId = id, startedUtc = DateTime.UtcNow.ToString("O"), seed = world.Seed,
                 buildVersion = Application.version, platform = Application.platform.ToString(),
                 progressionEnabled = world.ProgressionEnabled, weapon = world.Weapon.ToString(),
-                pet = world.Pet.ToString(),
+                pet = world.Pet.ToString(), twist = world.Twist.ToString(),
                 unityVersion = Application.unityVersion, configJson = JsonUtility.ToJson(world.GetConfig())
             }));
             writer.Flush();

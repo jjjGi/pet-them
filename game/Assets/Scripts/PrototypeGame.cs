@@ -131,7 +131,7 @@ namespace PetThem.Game
             // Under the creatures, so the warning never hides what is standing on it.
             bossWarning = RectSprite("Boss warning", Vector2.zero, Vector2.one, coral, 2);
             bossWarning.SetActive(false);
-            world = new CombatWorld(config, 42, true, weapon, petChoice);
+            world = new CombatWorld(config, 42, true, weapon, petChoice, true);
         }
 
         private void StartRun()
@@ -152,7 +152,7 @@ namespace PetThem.Game
             // The pet is rebuilt because its colour is part of telling the three apart.
             if (pet != null) Destroy(pet.gameObject);
             pet = Creature(petChoice.ToString(), LookOf(petChoice), 0.62f, 11).transform;
-            world = new CombatWorld(config, unchecked(Environment.TickCount), true, weapon, petChoice);
+            world = new CombatWorld(config, unchecked(Environment.TickCount), true, weapon, petChoice, true);
             started = true; paused = false; shopOpen = false; accumulator = 0; hurtFlash = 0;
             playerStrike = petStrike = -10;
             lastVisualTime = -1;
@@ -804,6 +804,17 @@ namespace PetThem.Game
                 Panel(new Rect(28,153,220 * (world.Level >= CombatWorld.MaxLevel ? 1 :
                     Mathf.Clamp01((float)world.Experience / world.ExperienceToNextLevel)),7),mint);
                 GUI.Label(new Rect(width-380,22,240,35),Texts.WaveAndKills(world.Wave, world.Kills),body);
+                // The condition is announced at the top of the run and then gets out of the way.
+                // It fades rather than cutting, so it does not read as a thing that needs dismissing.
+                if (world.Time < 5)
+                {
+                    float fade = Mathf.Clamp01(5 - world.Time);
+                    Color was = GUI.color;
+                    GUI.color = new Color(1,1,1,fade);
+                    GUI.Label(new Rect(width/2-300,96,600,36),Texts.TwistTitle(world.Twist),body);
+                    GUI.Label(new Rect(width/2-300,134,600,30),Texts.TwistDescription(world.Twist),small);
+                    GUI.color = was;
+                }
                 if (world.State == RunState.Playing && GUI.Button(new Rect(width-110,15,88,43),paused ? Texts.Resume : Texts.Pause,button)) TogglePause();
                 if (world.Boss != null)
                 {
@@ -859,6 +870,12 @@ namespace PetThem.Game
         /// The strength comes from CombatWorld.DrawPower, the same function that fires the arrow,
         /// so the gauge cannot disagree with the shot. Below the minimum it reads as empty and the
         /// line goes grey, which is what tells the player a tap is not a shot.
+        ///
+        /// Split in two on purpose. The ring, the drawn string and the power bar are the control,
+        /// so they stay under the thumb that is holding them. The aim preview is not a control: it
+        /// answers "where does the arrow go", and the arrow leaves the character, so it is drawn
+        /// from the character. Walking while drawing used to leave the preview behind at the spot
+        /// the thumb first landed, pointing from a place the arrow was never going to start.
         /// </remarks>
         private void DrawBowGauge(float scale)
         {
@@ -877,13 +894,18 @@ namespace PetThem.Game
             GUI.DrawTexture(new Rect(anchor.x + delta.x - 13, anchor.y + delta.y - 13, 26, 26),
                 Art.SoftCircle.texture);
 
-            // Dots the other way, growing outward: the arrow leaves opposite the pull, and this is
-            // the only thing on screen that says so.
+            // Dots from the character, growing outward: the arrow leaves opposite the pull, and this
+            // is the only thing on screen that says so. Taken from world.Facing rather than from the
+            // pull, because Facing is what the shot itself uses -- the preview cannot drift off it.
+            Vector3 onScreen = gameCamera.WorldToScreenPoint(new Vector3(world.Position.x, world.Position.y, 0));
+            Vector2 from = new Vector2(onScreen.x / scale, (Screen.height - onScreen.y) / scale);
+            Vector2 heading = new Vector2(world.Facing.x, -world.Facing.y);
+            float reach = 34 + 92 * power;
             GUI.color = new Color(tint.r, tint.g, tint.b, .8f);
             for (int i = 1; i <= 5; i++)
             {
-                Vector2 at = anchor - delta * (i / 5f);
-                float dot = 4 + i * 1.8f;
+                Vector2 at = from + heading * (reach * i / 5f);
+                float dot = 3 + i * 1.6f;
                 GUI.DrawTexture(new Rect(at.x - dot, at.y - dot, dot * 2, dot * 2), Art.SoftCircle.texture);
             }
 
@@ -1099,6 +1121,9 @@ namespace PetThem.Game
             GUILayout.Label(Texts.BuildHeadline,small);
             GUILayout.Label(Texts.BuildSummary(Texts.Weapon(weapon), Texts.Pet(petChoice), world.Level),
                 menuHeading);
+            // The run's condition belongs with the build: it is the other half of "why is this
+            // run going the way it is", and it was chosen for the player rather than by them.
+            GUILayout.Label(Texts.TwistTitle(world.Twist) + "  /  " + Texts.TwistDescription(world.Twist),small);
             GUILayout.Space(6);
 
             var taken = world.TakenUpgrades();

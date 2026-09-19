@@ -47,6 +47,9 @@ namespace PetThem.Combat
         public float laserHeatPerSecond = 36, laserCoolPerSecond = 28, laserOverheatPenalty = 1.5f;
         // Brute: slow, heavy, hits hard. Punishes standing still more than the chaser does.
         public float bruteHealth = 80, bruteSpeed = 0.85f, bruteContactDamage = 18, bruteShare = 0.16f;
+        // The shares above are what the mix reaches, not what it starts at. It opens gentler and
+        // takes mixWaves waves to get there, so a run has a shape rather than one flat crowd.
+        public float runnerShare = 0.34f, mixWaves = 5;
         // Boss: one per run, arrives late. Killing it ends the run early as a win.
         public float bossSpawnTime = 120, bossHealth = 1800, bossSpeed = 1.05f;
         public float bossContactDamage = 26, bossRadius = 1.9f;
@@ -120,6 +123,14 @@ namespace PetThem.Combat
                 throw new ArgumentException("bossTelegraph must be shorter than bossMoveInterval.");
             if (!Vec2.Finite(bruteShare) || bruteShare < 0 || bruteShare > 0.9f)
                 throw new ArgumentException("bruteShare must be between 0 and 0.9.");
+            if (!Vec2.Finite(runnerShare) || runnerShare < 0 || runnerShare > 0.9f)
+                throw new ArgumentException("runnerShare must be between 0 and 0.9.");
+            // The two shares are rolled against the same number, so together they must leave room
+            // for the walkers. Without this a bad config would silently stop spawning grunts.
+            if (runnerShare + bruteShare > 0.95f)
+                throw new ArgumentException("runnerShare and bruteShare must leave room for grunts.");
+            if (!Vec2.Finite(mixWaves) || mixWaves < 1 || mixWaves > 100)
+                throw new ArgumentException("mixWaves must be between 1 and 100.");
             if (maxEnemies < 1 || maxEnemies > 1000 || minSpawnInterval > spawnInterval ||
                 arenaHalfWidth <= 1 || arenaHalfHeight <= 1 || string.IsNullOrWhiteSpace(version))
                 throw new ArgumentException("Invalid limits or version.");
@@ -209,12 +220,26 @@ namespace PetThem.Combat
         public CombatWorld(BalanceConfig config, int seed, bool enableProgression, WeaponId weapon)
             : this(config, seed, enableProgression, weapon, PetId.Mochi) { }
 
-        public CombatWorld(BalanceConfig config, int seed, bool enableProgression, WeaponId weapon, PetId pet)
+        /// <param name="enableTwists">
+        /// Off by default so that every existing caller -- the checks and the bots -- keeps the
+        /// numbers it was written against. The game turns it on; anything comparing runs across
+        /// versions should leave it off.
+        /// </param>
+        public CombatWorld(BalanceConfig config, int seed, bool enableProgression, WeaponId weapon, PetId pet,
+            bool enableTwists = false)
         {
             if (config == null) throw new ArgumentNullException(nameof(config));
             config.Validate();
-            this.config = config.Copy();
-            baseConfig = config.Copy();
+            Twist = RollTwist(seed, enableTwists);
+            // Folded in before anything reads a number, so the twist is invisible from here on:
+            // nothing downstream needs to know a run is twisted, it just plays the numbers it has.
+            BalanceConfig twisted = config.Copy();
+            ApplyTwist(Twist, twisted);
+            twisted.Validate();
+            this.config = twisted;
+            // The starting values that upgrades are a percentage of are the twisted ones, so a
+            // "+20% of starting power" card is worth the same share of the run it is played in.
+            baseConfig = twisted.Copy();
             Weapon = weapon;
             Pet = pet;
             projectileView = projectiles.AsReadOnly();
@@ -319,9 +344,17 @@ namespace PetThem.Combat
             Vec2 position = Clamp(Position + direction * distance, 0.4f);
             // Avoid spawning on top of the player at an arena edge.
             if ((position - Position).Length < 4) position = Clamp(Position - direction * distance, 0.4f);
+            // The mix moves with the wave instead of staying fixed for the whole run. Wave one is
+            // almost all walkers and holds no brutes at all; by mixWaves it is the full mix. Before
+            // this, spawning faster and giving each enemy more health was the only thing that
+            // changed, so minute three fought the same fight as minute one, only more of it.
+            float ramp = config.mixWaves <= 1 ? 1
+                : Math.Min(1, (wave - 1) / (config.mixWaves - 1));
+            float runners = config.runnerShare * (0.3f + 0.7f * ramp);
+            float brutes = config.bruteShare * ramp;
             float roll = Next();
-            EnemyKind kind = roll < 0.28f ? EnemyKind.Runner
-                : roll < 0.28f + config.bruteShare ? EnemyKind.Brute
+            EnemyKind kind = roll < runners ? EnemyKind.Runner
+                : roll < runners + brutes ? EnemyKind.Brute
                 : EnemyKind.Grunt;
             SpawnAt(kind, position, "wave");
         }

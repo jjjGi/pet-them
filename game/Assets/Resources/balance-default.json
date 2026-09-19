@@ -39,6 +39,8 @@
   "bruteSpeed": 0.85,
   "bruteContactDamage": 18,
   "bruteShare": 0.16,
+  "runnerShare": 0.34,
+  "mixWaves": 5,
   "bossSpawnTime": 120,
   "bossHealth": 1800,
   "bossSpeed": 1.05,

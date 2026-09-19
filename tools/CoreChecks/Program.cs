@@ -419,8 +419,11 @@ Check("brutes are slower, tougher and hit harder than chasers", () =>
     True(world.ContactDamageOf(EnemyKind.Brute) > world.ContactDamageOf(EnemyKind.Grunt));
     True(world.ContactDamageOf(EnemyKind.Boss) > world.ContactDamageOf(EnemyKind.Brute));
 
-    // With a share configured, brutes actually turn up in a long run.
-    var busy = new CombatWorld(new BalanceConfig { playerHealth = 100000, petRange = .001f,
+    // With a share configured, brutes actually turn up in a long run. The pet has to be lethal
+    // here: with nothing killing the crowd the arena fills, spawning stops, and the run never
+    // reaches the later waves that brutes are drawn from at all.
+    var busy = new CombatWorld(new BalanceConfig { playerHealth = 100000,
+        petDamage = 1000, petRange = 100, petCooldown = .01f, waveDuration = 5,
         spawnInterval = .05f, minSpawnInterval = .05f, bossSpawnTime = 1000 }, 42);
     int brutes = 0, runners = 0, grunts = 0;
     for (int i = 0; i < 3600; i++)
@@ -433,9 +436,10 @@ Check("brutes are slower, tougher and hit harder than chasers", () =>
     True(brutes > 0 && runners > 0 && grunts > 0);
     True(grunts > brutes);
 
-    // Setting the share to zero removes them entirely.
-    var none = new CombatWorld(new BalanceConfig { playerHealth = 100000, petRange = .001f,
-        bruteShare = 0, spawnInterval = .05f, minSpawnInterval = .05f, bossSpawnTime = 1000 }, 42);
+    // Setting the share to zero removes them entirely, at every wave.
+    var none = new CombatWorld(new BalanceConfig { playerHealth = 100000,
+        petDamage = 1000, petRange = 100, petCooldown = .01f, waveDuration = 5, bruteShare = 0,
+        spawnInterval = .05f, minSpawnInterval = .05f, bossSpawnTime = 1000 }, 42);
     for (int i = 0; i < 3600; i++)
     { none.Step(default); True(Count(none, "spawn", nameof(EnemyKind.Brute)) == 0); }
 });
@@ -1031,6 +1035,110 @@ Check("every upgrade has a family, a cap policy, and shows up in the taken list"
     // Sorted strongest first, so the pause screen reads as a build.
     for (int i = 1; i < taken.Count; i++) True(taken[i - 1].Rank >= taken[i].Rank);
 });
+Check("a run's twist is fixed, rolled apart, and off unless asked for", () =>
+{
+    // Every existing caller -- the bots, and every check above this one -- was written against
+    // untwisted numbers. If the default ever flips, their results silently stop meaning anything.
+    for (int seed = 1; seed <= 40; seed++)
+        True(new CombatWorld(new BalanceConfig(), seed, true, WeaponId.Punch, PetId.Mochi).Twist == TwistId.Calm);
+
+    // The same seed must give the same twist, and the twist must not move with anything else.
+    for (int seed = 1; seed <= 40; seed++)
+    {
+        var a = new CombatWorld(new BalanceConfig(), seed, true, WeaponId.Punch, PetId.Mochi, true);
+        var b = new CombatWorld(new BalanceConfig(), seed, true, WeaponId.Laser, PetId.Coco, true);
+        True(a.Twist == b.Twist);
+    }
+
+    // All of them have to be reachable, or a twist is dead content nobody will ever see.
+    var seen = new HashSet<TwistId>();
+    for (int seed = 1; seed <= 400; seed++)
+        seen.Add(new CombatWorld(new BalanceConfig(), seed, true, WeaponId.Punch, PetId.Mochi, true).Twist);
+    True(seen.Count == Enum.GetValues(typeof(TwistId)).Length);
+});
+Check("each twist changes the run it claims to change, and pays for it", () =>
+{
+    var plain = new CombatWorld(new BalanceConfig(), 7, true, WeaponId.Punch, PetId.Mochi).GetConfig();
+    foreach (TwistId twist in Enum.GetValues(typeof(TwistId)))
+    {
+        // Reached through the constructor rather than by calling the private applier, so this
+        // checks the path the game actually takes.
+        int seed = 1;
+        while (seed < 5000 &&
+               new CombatWorld(new BalanceConfig(), seed, true, WeaponId.Punch, PetId.Mochi, true).Twist != twist)
+            seed++;
+        True(seed < 5000);
+        var config = new CombatWorld(new BalanceConfig(), seed, true, WeaponId.Punch, PetId.Mochi, true).GetConfig();
+
+        switch (twist)
+        {
+            case TwistId.Calm:
+                Near(config.spawnInterval, plain.spawnInterval);
+                Near(config.coinsPerKill, plain.coinsPerKill);
+                break;
+            case TwistId.Swarm:
+                True(config.spawnInterval < plain.spawnInterval);
+                True(config.gruntHealth < plain.gruntHealth);
+                break;
+            case TwistId.Swift:
+                True(config.gruntSpeed > plain.gruntSpeed);
+                True(config.runnerSpeed > plain.runnerSpeed);
+                break;
+            case TwistId.Armored:
+                True(config.gruntHealth > plain.gruntHealth);
+                True(config.spawnInterval > plain.spawnInterval);
+                break;
+            case TwistId.EarlyBoss:
+                True(config.bossSpawnTime < plain.bossSpawnTime);
+                break;
+            case TwistId.Harsh:
+                True(config.contactDamage > plain.contactDamage);
+                True(config.bossSlamDamage > plain.bossSlamDamage);
+                break;
+        }
+        // Anything that makes the run harder has to be worth more than the quiet one.
+        if (twist != TwistId.Calm) True(config.coinsPerKill > plain.coinsPerKill);
+    }
+});
+Check("the enemy mix opens gentler and builds up with the wave", () =>
+{
+    // Wave one holds no brutes at all; by mixWaves the full share is in play. Counted from real
+    // spawn events rather than from the share maths, so the ramp has to survive the rounding.
+    // The pet clears the crowd so spawning keeps up with the waves. Without it the arena hits the
+    // cap in the first few seconds and every later wave has nothing to measure.
+    var config = new BalanceConfig { playerHealth = 1000000,
+        petDamage = 1000, petRange = 100, petCooldown = .01f, spawnInterval = .05f,
+        minSpawnInterval = .05f, waveDuration = 5, mixWaves = 5, bossSpawnTime = 100000 };
+    var world = new CombatWorld(config, 99);
+    var byWave = new Dictionary<int, Dictionary<EnemyKind, int>>();
+    while (world.Time < 30 && world.State == RunState.Playing)
+    {
+        world.Step(default);
+        foreach (CombatEvent e in world.Events)
+        {
+            if (e.type != "spawn") continue;
+            if (!byWave.TryGetValue(e.wave, out var counts))
+                byWave[e.wave] = counts = new Dictionary<EnemyKind, int>();
+            var kind = (EnemyKind)Enum.Parse(typeof(EnemyKind), e.source);
+            counts[kind] = counts.TryGetValue(kind, out int n) ? n + 1 : 1;
+        }
+    }
+    True(byWave.ContainsKey(1) && byWave.ContainsKey(6));
+    True(!byWave[1].ContainsKey(EnemyKind.Brute));
+    float Share(int wave, EnemyKind kind)
+    {
+        int total = 0, of = 0;
+        foreach (var pair in byWave[wave]) { total += pair.Value; if (pair.Key == kind) of = pair.Value; }
+        return total == 0 ? 0 : of / (float)total;
+    }
+    True(Share(6, EnemyKind.Brute) > 0);
+    True(Share(6, EnemyKind.Runner) > Share(1, EnemyKind.Runner));
+    True(Share(6, EnemyKind.Grunt) < Share(1, EnemyKind.Grunt));
+    // A mix that leaves no room for walkers is a config mistake, not a hard run.
+    Throws(() => new CombatWorld(new BalanceConfig { runnerShare = .8f, bruteShare = .5f }, 1));
+    Throws(() => new CombatWorld(new BalanceConfig { runnerShare = -.1f }, 1));
+    Throws(() => new CombatWorld(new BalanceConfig { mixWaves = 0 }, 1));
+});
 Check("every id the player can see is translated in every language", () =>
 {
     var languages = (Language[])Enum.GetValues(typeof(Language));
@@ -1059,6 +1167,11 @@ Check("every id the player can see is translated in every language", () =>
         // Only the moves the player is warned about. Stalk and Telegraph are never named on screen.
         foreach (BossAction move in new[] { BossAction.Charge, BossAction.Slam, BossAction.Summon })
             Translated(Texts.BossMove(move), move.ToString());
+        foreach (TwistId twist in Enum.GetValues(typeof(TwistId)))
+        {
+            Translated(Texts.TwistTitle(twist), twist.ToString());
+            Translated(Texts.TwistDescription(twist), twist.ToString());
+        }
 
         // A sample of the screen text, so a language that is only half filled in is caught.
         foreach (string line in new[]
