@@ -6,6 +6,16 @@ namespace PetThem.Game
     public enum Language { Korean, English }
 
     /// <summary>
+    /// The sections of the home screen, in the order the tab bar shows them.
+    /// </summary>
+    /// <remarks>
+    /// Declared next to the strings rather than beside the screen code because the screen code
+    /// needs UnityEngine and this does not. Keeping it here is what lets the translation check
+    /// walk every tab and prove each one has a name in each language.
+    /// </remarks>
+    public enum HomeTab { Home, Shop, Settings }
+
+    /// <summary>
     /// Every string the player reads, in each language the game ships.
     /// </summary>
     /// <remarks>
@@ -44,7 +54,7 @@ namespace PetThem.Game
         /// The one place the build number lives. The editor stamps the Android package with it and
         /// the menu prints it, so the version on the phone and the version on screen cannot drift.
         /// </summary>
-        public const string Version = "0.15.0";
+        public const string Version = "0.16.0";
         public static string MusicSetting(bool enabled) => Pick("배경음악", "Music") + (enabled ? " ON" : " OFF");
         public static string SoundSetting(bool enabled) => Pick("효과음", "Sound") + (enabled ? " ON" : " OFF");
 
@@ -373,6 +383,24 @@ namespace PetThem.Game
 
         public static string WeaponPickerLabel => Pick("주무기  /  한 판 동안 바꿀 수 없습니다", "MAIN WEAPON  /  pick one for the whole run");
         public static string PetPickerLabel(PetId id) => Pick($"펫  /  {PetRole(id)}", $"BUDDY  /  {PetRole(id)}");
+
+        public static string TabName(HomeTab tab)
+        {
+            switch (tab)
+            {
+                case HomeTab.Home: return Pick("홈", "HOME");
+                case HomeTab.Shop: return Pick("상점", "SHOP");
+                case HomeTab.Settings: return Pick("설정", "SETTINGS");
+                default: return tab.ToString();
+            }
+        }
+
+        /// <summary>The coin count in the home screen's top bar, where it is always in view.</summary>
+        public static string Wallet(int coins) => Pick($"코인  {coins}", $"COINS  {coins}");
+
+        public static string ToHome => Pick("홈으로", "HOME");
+        public static string Loadout(WeaponId held, PetId buddy) => Weapon(held) + "  /  " + Pet(buddy);
+        public static string InfoHeadline => Pick("이 빌드에 대하여", "ABOUT THIS BUILD");
 
         public static string Play => Pick("시작하기  >", "LET'S PLAY  >");
         public static string KeepGoing => Pick("계속하기  >", "KEEP GOING  >");

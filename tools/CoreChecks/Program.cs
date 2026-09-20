@@ -1184,6 +1184,10 @@ Check("every id the player can see is translated in every language", () =>
             }
         }
         True(!string.IsNullOrWhiteSpace(Texts.CoachReplay));
+        // Every section of the home screen needs a name in every language: an untranslated tab
+        // falls through to the raw enum name and the bar reads half in English.
+        foreach (HomeTab tab in Enum.GetValues(typeof(HomeTab)))
+            Translated(Texts.TabName(tab), tab.ToString());
 
         // A sample of the screen text, so a language that is only half filled in is caught.
         foreach (string line in new[]
@@ -1193,6 +1197,7 @@ Check("every id the player can see is translated in every language", () =>
                      Texts.ShopHeadline, Texts.ShopHint, Texts.Owned, Texts.Starter,
                      Texts.LevelUpHeadline, Texts.LevelUpHint, Texts.MoveHint, Texts.Heat,
                      Texts.BossEnraged, Texts.BossDownHeadline,
+                     Texts.ToHome, Texts.InfoHeadline, Texts.Wallet(0), Texts.PausedHeadline,
                  })
             True(!string.IsNullOrWhiteSpace(line));
     }

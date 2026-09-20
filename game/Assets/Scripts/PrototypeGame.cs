@@ -28,7 +28,7 @@ namespace PetThem.Game
         private WeaponId weapon = WeaponId.Punch;
         private PetId petChoice = PetId.Mochi;
         private PlayerProfile profile;
-        private bool shopOpen;
+        private HomeTab homeTab = HomeTab.Home;
         private int lastRunCoins;
         private Vec2 move, aim, queuedAim;
         private bool queuedPunch, holdAttack, paused, started;
@@ -83,6 +83,7 @@ namespace PetThem.Game
         }
         private string recordingPath = "", recordingError = "";
         private GUIStyle title, heading, body, small, button, menuTitle, menuHeading, menuButton, diagnostic, coaching;
+        private GUIStyle homeTitle, bigButton, tabButton, tabButtonOn;
         private string fontReport = "";
         private bool koreanUnavailable;
 
@@ -161,7 +162,7 @@ namespace PetThem.Game
             world = new CombatWorld(config, unchecked(Environment.TickCount), true, weapon, petChoice, true);
             coach.Begin(weapon);
             coachPosition = world.Position;
-            started = true; paused = false; shopOpen = false; accumulator = 0; hurtFlash = 0;
+            started = true; paused = false; accumulator = 0; hurtFlash = 0;
             playerStrike = petStrike = -10;
             lastVisualTime = -1;
             lastVisualPosition = Vector3.zero;
@@ -734,6 +735,15 @@ namespace PetThem.Game
             menuHeading = new GUIStyle(heading) { fontSize = 24, wordWrap = true };
             menuButton = new GUIStyle(button) { wordWrap = true };
             coaching = new GUIStyle(body) { alignment = TextAnchor.MiddleCenter };
+            homeTitle = new GUIStyle(heading) { alignment = TextAnchor.MiddleCenter };
+            bigButton = new GUIStyle(button) { fontSize = 30 };
+            // The selected tab is not just tinted: on a phone in sunlight a colour difference
+            // alone is easy to miss, so the current one is also the only bold one.
+            tabButton = new GUIStyle(GUI.skin.label) { fontSize = 21, alignment = TextAnchor.MiddleCenter };
+            tabButtonOn = new GUIStyle(tabButton) { fontStyle = FontStyle.Bold };
+            if (glyphs != null) { tabButton.font = tabButtonOn.font = glyphs; }
+            tabButton.normal.textColor = new Color(1,1,1,.45f);
+            tabButtonOn.normal.textColor = mint;
 
             // Deliberately keeps the built-in font: if the chosen one cannot draw, this line is
             // the only thing on screen that can say so.
@@ -840,12 +850,12 @@ namespace PetThem.Game
             float scale = Screen.height / 720f;
             float width = Screen.width / scale;
             GUI.matrix = Matrix4x4.Scale(new Vector3(scale,scale,1));
-            Panel(new Rect(0,0,width,76),ink);
-            GUI.Label(new Rect(28,15,260,45),Texts.GameTitle,heading);
-            GUI.Label(new Rect(width/2-100,13,240,45),FormatTime(world.Time) + " / 03:00",heading);
-            GUI.Label(new Rect(28,87,360,32),Texts.Pet(petChoice) + "  /  " + Texts.Weapon(weapon),small);
             if (started)
             {
+                Panel(new Rect(0,0,width,76),ink);
+                GUI.Label(new Rect(28,15,260,45),Texts.GameTitle,heading);
+                GUI.Label(new Rect(width/2-100,13,240,45),FormatTime(world.Time) + " / 03:00",heading);
+                GUI.Label(new Rect(28,87,360,32),Texts.Loadout(weapon, petChoice),small);
                 Panel(new Rect(28,48,220,9),new Color(.3f,.35f,.38f));
                 Panel(new Rect(28,48,220 * world.Health / world.MaxHealth,9),mint);
                 GUI.Label(new Rect(28,119,370,30),Texts.Level(world.Level, world.Level >= CombatWorld.MaxLevel,
@@ -909,9 +919,9 @@ namespace PetThem.Game
             }
             if (started && !paused && world.State == RunState.Playing && world.HasUpgradeChoice)
                 DrawUpgradeChoices(width);
-            bool onMenu = !started || paused || world.State != RunState.Playing;
-            if (onMenu && shopOpen) { DrawShop(width); return; }
-            if (onMenu) DrawMainMenu(width);
+            if (!started) { DrawHome(width); return; }
+            if (world.State != RunState.Playing) { DrawResult(width); return; }
+            if (paused) DrawPause(width);
         }
         /// <summary>
         /// One line of coaching over the arena, for as long as the lesson behind it is unlearned.
@@ -991,130 +1001,117 @@ namespace PetThem.Game
             GUI.color = Color.white;
         }
 
-        /// <summary>
-        /// The weapon is chosen before the run and cannot change during it, so the upgrades that
-        /// appear later all belong to the same weapon.
-        /// </summary>
-        private Vector2 menuScroll;
+        private Vector2 menuScroll, settingsScroll;
 
-        private void DrawMainMenu(float width)
+        /// <summary>
+        /// The home screen: what the player sees before a run and comes back to after one.
+        /// </summary>
+        /// <remarks>
+        /// Laid out the way mobile survivor games lay it out, because that is what this is and
+        /// players arrive already knowing where things go: money along the top where it stays in
+        /// view, what you are taking into the fight in the middle, one large start button, and the
+        /// rest of the game behind a tab bar down where the thumbs already are.
+        ///
+        /// What this replaced was a single scrolling column that was also the pause screen and the
+        /// results screen. Those are three different moments and they have three screens now.
+        ///
+        /// The tab bar is the growth plan. Shop and settings are what there is to put in it today;
+        /// another section is one enum case and one method away, and the bar re-spaces itself.
+        /// </remarks>
+        private void DrawHome(float width)
         {
-            Panel(new Rect(0,76,width,644),new Color(ink.r,ink.g,ink.b,.92f));
-            bool portraits = width >= 1100;
-            float contentWidth = Mathf.Min(760, width - (portraits ? 280 : 64));
-            float left = (width - contentWidth - (portraits ? 210 : 0)) / 2 + (portraits ? 210 : 0);
-            if (portraits)
+            Panel(new Rect(0,0,width,720),ink);
+            Panel(new Rect(0,0,width,76),new Color32(11,20,28,255));
+            GUI.Label(new Rect(28,17,320,42),Texts.Wallet(profile.coins),heading);
+            GUI.Label(new Rect(width/2-200,17,400,42),Texts.GameTitle,homeTitle);
+            GUI.Label(new Rect(width-200,26,172,30),Texts.Version,small);
+
+            switch (homeTab)
             {
-                GUI.DrawTexture(new Rect(left-210,150,180,180),Art.Creature(Look.Player).texture,ScaleMode.ScaleToFit,true);
-                GUI.DrawTexture(new Rect(left-176,355,120,120),Art.Creature(LookOf(petChoice)).texture,ScaleMode.ScaleToFit,true);
+                case HomeTab.Shop: DrawShopTab(width); break;
+                case HomeTab.Settings: DrawSettingsTab(width); break;
+                default: DrawPlayTab(width); break;
             }
-            // GUILayout measures each wrapped label with the active font. No following control
-            // can begin until the preceding text has consumed its actual height.
-            GUILayout.BeginArea(new Rect(left,100,contentWidth,600));
-            menuScroll = GUILayout.BeginScrollView(menuScroll, false, false);
-            GUILayout.Label(!started ? Texts.StartHeadline :
-                paused && world.State == RunState.Playing ? Texts.PausedHeadline :
-                world.BossDefeated ? Texts.BossDownHeadline :
-                world.State == RunState.Won ? Texts.WonHeadline : Texts.LostHeadline,menuTitle);
-            GUILayout.Space(12);
-            GUILayout.Label(!started ? Texts.StartBlurb :
-                Texts.RunResult(FormatTime(world.Time),world.Kills,world.Wave) + "\n" +
-                Texts.CoinsEarned(lastRunCoins,world.BossDefeated,profile.coins),menuHeading);
-            GUILayout.Space(12);
-            GUILayout.Label(!started ? Texts.StartControls : Texts.EnemyLegend,body);
-            GUILayout.Space(14);
-            // Once a run is under way, what was picked matters more than the control reminder.
-            if (started) { DrawBuild(); GUILayout.Space(14); }
-            bool picking = !started || world.State != RunState.Playing;
-            if (picking) DrawWeaponPicker();
-            GUILayout.Space(14);
-            GUILayout.BeginHorizontal();
-            string label = !started ? Texts.Play :
-                paused && world.State == RunState.Playing ? Texts.KeepGoing : Texts.TryAgain;
-            if (GUILayout.Button(label,menuButton,GUILayout.MinHeight(52)))
-            { if (started && paused && world.State == RunState.Playing) TogglePause(); else StartRun(); }
-            GUILayout.Space(12);
-            if (started && paused && world.State == RunState.Playing)
-            {
-                if (GUILayout.Button(Texts.Restart,menuButton,GUILayout.MinHeight(52))) StartRun();
-            }
-            else if (picking && GUILayout.Button(Texts.Shop(profile.coins),menuButton,GUILayout.MinHeight(52))) shopOpen = true;
-            GUILayout.EndHorizontal();
-            GUILayout.Space(10);
-            // The language button has its own row instead of covering the shop on narrow views.
-            if (!koreanUnavailable &&
-                GUILayout.Button(Texts.LanguageName(Texts.Next),menuButton,GUILayout.MinHeight(40)))
-                Texts.Use(Texts.Next);
-            GUILayout.Space(8);
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button(Texts.MusicSetting(gameAudio.MusicEnabled),menuButton,GUILayout.MinHeight(40))) gameAudio.ToggleMusic();
-            if (GUILayout.Button(Texts.SoundSetting(gameAudio.EffectsEnabled),menuButton,GUILayout.MinHeight(40))) gameAudio.ToggleEffects();
-            GUILayout.EndHorizontal();
-            GUILayout.Space(8);
-            // Offered once anything has been learned: before that the lessons are already on
-            // their way, and a button promising them would be promising what is about to happen.
-            // Not gated on finishing them all, because the boss lesson needs a run that survives
-            // to the two-minute mark and handing the phone to someone else should not.
-            if (coach.Learned != 0 && GUILayout.Button(Texts.CoachReplay,menuButton,GUILayout.MinHeight(40)))
-                ForgetCoaching();
-            GUILayout.Label(recordingError.Length > 0 ? recordingError :
-                started ? Texts.RunLog(recordingPath) : Texts.Build,small);
-            // Drawn with the built-in font on purpose, so it survives a font that cannot draw.
-            GUILayout.Label(fontReport,diagnostic);
-            GUILayout.EndScrollView();
+            DrawTabBar(width);
+        }
+
+        /// <summary>The tab that starts a run: who is going, carrying what, and the button.</summary>
+        private void DrawPlayTab(float width)
+        {
+            float contentWidth = Mathf.Min(940, width - 56);
+            float left = (width - contentWidth) / 2;
+
+            // The pair about to be taken into the fight, drawn at the size of a decision rather
+            // than as two words in a list.
+            Panel(new Rect(left,96,300,500),new Color32(24,41,49,255));
+            GUI.DrawTexture(new Rect(left+60,116,180,180),Art.Creature(Look.Player).texture,ScaleMode.ScaleToFit,true);
+            GUI.DrawTexture(new Rect(left+95,312,110,110),Art.Creature(LookOf(petChoice)).texture,ScaleMode.ScaleToFit,true);
+            GUI.Label(new Rect(left+16,442,268,36),Texts.Loadout(weapon,petChoice),homeTitle);
+            GUI.Label(new Rect(left+16,486,268,64),Texts.StartHeadline,coaching);
+
+            float right = left + 328, rightWidth = contentWidth - 328;
+            DrawWeaponRow(right,100,rightWidth);
+            DrawPetRow(right,222,rightWidth);
+            if (GUI.Button(new Rect(right,368,rightWidth,86),Texts.Play,bigButton)) StartRun();
+
+            // What a run is, in the two lines it takes. The coach teaches the controls in the
+            // fight now, so this no longer has to.
+            GUILayout.BeginArea(new Rect(right,474,rightWidth,122));
+            GUILayout.Label(Texts.StartBlurb,body);
             GUILayout.EndArea();
         }
 
-        private void DrawWeaponPicker()
+        /// <summary>The three weapons as one row. The chosen one is the lit one.</summary>
+        private void DrawWeaponRow(float x, float y, float w)
         {
-            GUILayout.Label(Texts.WeaponPickerLabel,small);
-            GUILayout.Space(4);
-            GUILayout.BeginHorizontal();
+            GUI.Label(new Rect(x,y,w,28),Texts.WeaponPickerLabel,small);
             var weapons = new[] { WeaponId.Punch, WeaponId.Arrow, WeaponId.Laser };
+            float gap = 12, cell = (w - gap * (weapons.Length - 1)) / weapons.Length;
             for (int i = 0; i < weapons.Length; i++)
             {
-                if (i > 0) GUILayout.Space(12);
                 bool chosen = weapon == weapons[i];
                 Color previous = GUI.color;
                 GUI.color = chosen ? mint : new Color(1,1,1,.55f);
-                if (GUILayout.Button((chosen ? "> " : "") + Texts.Weapon(weapons[i]),button,
-                    GUILayout.MinHeight(44),GUILayout.ExpandWidth(true))) weapon = weapons[i];
+                if (GUI.Button(new Rect(x + i * (cell + gap),y + 32,cell,58),
+                    (chosen ? "> " : "") + Texts.Weapon(weapons[i]),button)) weapon = weapons[i];
                 GUI.color = previous;
             }
-            GUILayout.EndHorizontal();
-            GUILayout.Space(10);
-            GUILayout.Label(Texts.PetPickerLabel(petChoice),small);
-            GUILayout.Space(4);
-            GUILayout.BeginHorizontal();
+        }
+
+        /// <summary>
+        /// The three buddies. A locked one shows its price and opens the shop, which is the only
+        /// useful thing a locked button can do.
+        /// </summary>
+        private void DrawPetRow(float x, float y, float w)
+        {
+            GUI.Label(new Rect(x,y,w,28),Texts.PetPickerLabel(petChoice),small);
             var pets = new[] { PetId.Mochi, PetId.Bori, PetId.Coco };
+            float gap = 12, cell = (w - gap * (pets.Length - 1)) / pets.Length;
             for (int i = 0; i < pets.Length; i++)
             {
-                if (i > 0) GUILayout.Space(12);
                 bool owned = profile.IsUnlocked(pets[i]);
                 bool chosen = petChoice == pets[i];
                 Color previous = GUI.color;
                 GUI.color = !owned ? new Color(1,1,1,.3f) : chosen ? PetColor(pets[i]) : new Color(1,1,1,.55f);
                 string label = owned ? (chosen ? "> " : "") + Texts.Pet(pets[i])
                     : Texts.Pet(pets[i]) + "  " + PlayerProfile.PriceOf(pets[i],config);
-                if (GUILayout.Button(label,button,GUILayout.MinHeight(44),GUILayout.ExpandWidth(true)))
-                { if (owned) petChoice = pets[i]; else shopOpen = true; }
+                if (GUI.Button(new Rect(x + i * (cell + gap),y + 32,cell,58),label,button))
+                { if (owned) petChoice = pets[i]; else homeTab = HomeTab.Shop; }
                 GUI.color = previous;
             }
-            GUILayout.EndHorizontal();
         }
+
         /// <summary>
-        /// The shop is the only place coins are spent. It is deliberately a separate screen so a
-        /// mis-tap on the start screen cannot buy anything.
+        /// The only place coins are spent. It stays a tab of its own rather than a button beside
+        /// the start button, so a mis-tap on the way into a run cannot buy anything.
         /// </summary>
-        private void DrawShop(float width)
+        private void DrawShopTab(float width)
         {
-            Panel(new Rect(0,76,width,644),new Color(ink.r,ink.g,ink.b,.97f));
             float left = 32;
-            GUI.Label(new Rect(left,120,width-64,50),Texts.ShopHeadline,heading);
-            GUI.Label(new Rect(left,176,width-64,40),
+            GUI.Label(new Rect(left,94,width-64,40),Texts.ShopHeadline,heading);
+            GUI.Label(new Rect(left,138,width-64,32),
                 Texts.ShopWallet(profile.coins, profile.runsFinished),body);
-            GUI.Label(new Rect(left,220,width-64,34),
-                Texts.ShopHint,small);
+            GUI.Label(new Rect(left,174,width-64,28),Texts.ShopHint,small);
 
             var pets = new[] { PetId.Mochi, PetId.Bori, PetId.Coco };
             float gap = 16, cardWidth = (width - 64 - gap * 2) / 3;
@@ -1124,28 +1121,150 @@ namespace PetThem.Game
                 bool owned = profile.IsUnlocked(id);
                 int price = PlayerProfile.PriceOf(id, config);
                 float x = left + i * (cardWidth + gap);
-                Panel(new Rect(x,266,cardWidth,310),new Color32(34,57,65,255));
-                GUI.DrawTexture(new Rect(x+cardWidth/2-50,278,100,100),Art.Creature(LookOf(id)).texture,ScaleMode.ScaleToFit,true);
+                Panel(new Rect(x,208,cardWidth,310),new Color32(34,57,65,255));
+                GUI.DrawTexture(new Rect(x+cardWidth/2-50,220,100,100),Art.Creature(LookOf(id)).texture,ScaleMode.ScaleToFit,true);
 
                 Color previous = GUI.color;
                 GUI.color = PetColor(id);
-                GUI.Label(new Rect(x+16,380,cardWidth-32,38),Texts.Pet(id),heading);
+                GUI.Label(new Rect(x+16,322,cardWidth-32,38),Texts.Pet(id),heading);
                 GUI.color = previous;
-                GUI.Label(new Rect(x+16,422,cardWidth-32,80),Texts.PetRole(id),body);
+                GUI.Label(new Rect(x+16,364,cardWidth-32,80),Texts.PetRole(id),body);
 
                 if (owned)
-                    GUI.Label(new Rect(x+16,516,cardWidth-32,46),
+                    GUI.Label(new Rect(x+16,458,cardWidth-32,46),
                         id == PlayerProfile.StarterPet ? Texts.Starter : Texts.Owned,small);
                 else if (profile.coins < price)
-                    GUI.Label(new Rect(x+16,516,cardWidth-32,46),
+                    GUI.Label(new Rect(x+16,458,cardWidth-32,46),
                         Texts.Short(price, price - profile.coins),small);
-                else if (GUI.Button(new Rect(x+16,516,cardWidth-32,46),Texts.Unlock(price),button))
+                else if (GUI.Button(new Rect(x+16,458,cardWidth-32,46),Texts.Unlock(price),button))
                     Buy(id);
             }
-
-            if (GUI.Button(new Rect(left,596,300,58),Texts.Back,button)) shopOpen = false;
-            GUI.Label(new Rect(left,668,width-64,40),
+            GUI.Label(new Rect(left,536,width-64,36),
                 ProfileStore.Status.Length > 0 ? ProfileStore.Status : Texts.SavePath(ProfileStore.FilePath),small);
+        }
+
+        /// <summary>
+        /// Settings, and the diagnostics that have to be readable on a phone with nothing attached
+        /// to it. Laid out with GUILayout because most of it is sentences: a fixed rect is what
+        /// clipped the old start screen, and the two languages are not the same length.
+        /// </summary>
+        private void DrawSettingsTab(float width)
+        {
+            float contentWidth = Mathf.Min(760, width - 64);
+            float left = (width - contentWidth) / 2;
+            GUILayout.BeginArea(new Rect(left,94,contentWidth,528));
+            settingsScroll = GUILayout.BeginScrollView(settingsScroll, false, false);
+
+            if (!koreanUnavailable &&
+                GUILayout.Button(Texts.LanguageName(Texts.Next),menuButton,GUILayout.MinHeight(46)))
+                Texts.Use(Texts.Next);
+            GUILayout.Space(8);
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button(Texts.MusicSetting(gameAudio.MusicEnabled),menuButton,GUILayout.MinHeight(46))) gameAudio.ToggleMusic();
+            if (GUILayout.Button(Texts.SoundSetting(gameAudio.EffectsEnabled),menuButton,GUILayout.MinHeight(46))) gameAudio.ToggleEffects();
+            GUILayout.EndHorizontal();
+            GUILayout.Space(8);
+            // Offered once anything has been learned: before that the lessons are already on their
+            // way, and a button promising them would be promising what is about to happen.
+            if (coach.Learned != 0 && GUILayout.Button(Texts.CoachReplay,menuButton,GUILayout.MinHeight(46)))
+                ForgetCoaching();
+
+            GUILayout.Space(20);
+            GUILayout.Label(Texts.InfoHeadline,small);
+            GUILayout.Label(Texts.Build,body);
+            GUILayout.Space(8);
+            GUILayout.Label(Texts.StartControls,body);
+            GUILayout.Space(8);
+            GUILayout.Label(Texts.EnemyLegend,body);
+            GUILayout.Space(8);
+            GUILayout.Label(recordingError.Length > 0 ? recordingError
+                : Texts.SavePath(ProfileStore.FilePath),small);
+            // Drawn with the built-in font on purpose, so it survives a font that cannot draw.
+            GUILayout.Label(fontReport,diagnostic);
+            GUILayout.EndScrollView();
+            GUILayout.EndArea();
+        }
+
+        /// <summary>The bar along the bottom, under the thumbs, one entry per section.</summary>
+        /// <remarks>
+        /// The whole cell is the hit area but only the word is drawn: a row of framed buttons
+        /// reads as more things to press, and this is meant to read as where you are. The current
+        /// tab is bold as well as coloured, because on a phone in sunlight a colour difference on
+        /// its own is easy to miss.
+        /// </remarks>
+        private void DrawTabBar(float width)
+        {
+            Panel(new Rect(0,636,width,84),new Color32(11,20,28,255));
+            var tabs = (HomeTab[])Enum.GetValues(typeof(HomeTab));
+            float cell = width / tabs.Length;
+            for (int i = 0; i < tabs.Length; i++)
+            {
+                bool on = homeTab == tabs[i];
+                var box = new Rect(i * cell,636,cell,84);
+                if (on) Panel(new Rect(box.x,636,cell,4),mint);
+                if (GUI.Button(box,GUIContent.none,GUIStyle.none)) homeTab = tabs[i];
+                GUI.Label(box,Texts.TabName(tabs[i]),on ? tabButtonOn : tabButton);
+            }
+        }
+
+        /// <summary>
+        /// The pause screen. Its job is to show what the run has turned into -- weapon, buddy,
+        /// level, every upgrade taken -- because by the tenth level nobody remembers.
+        /// </summary>
+        private void DrawPause(float width)
+        {
+            Panel(new Rect(0,76,width,644),new Color(ink.r,ink.g,ink.b,.94f));
+            float contentWidth = Mathf.Min(760, width - 64);
+            float left = (width - contentWidth) / 2;
+            GUILayout.BeginArea(new Rect(left,100,contentWidth,600));
+            menuScroll = GUILayout.BeginScrollView(menuScroll, false, false);
+            GUILayout.Label(Texts.PausedHeadline,menuTitle);
+            GUILayout.Space(12);
+            DrawBuild();
+            GUILayout.Space(16);
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button(Texts.KeepGoing,menuButton,GUILayout.MinHeight(56))) TogglePause();
+            GUILayout.Space(12);
+            if (GUILayout.Button(Texts.Restart,menuButton,GUILayout.MinHeight(56))) StartRun();
+            GUILayout.EndHorizontal();
+            GUILayout.Space(10);
+            GUILayout.Label(recordingError.Length > 0 ? recordingError : Texts.RunLog(recordingPath),small);
+            GUILayout.EndScrollView();
+            GUILayout.EndArea();
+        }
+
+        /// <summary>
+        /// The end of a run: how it went, what it paid, and the two things worth doing next.
+        /// </summary>
+        /// <remarks>
+        /// Going home is the one that leads somewhere. The weapon and the buddy are chosen there
+        /// and the coins just banked are spent there, so a finished run can change the next one.
+        /// Trying again keeps the same pair on purpose, for the player who only wanted another go
+        /// at the same fight.
+        /// </remarks>
+        private void DrawResult(float width)
+        {
+            Panel(new Rect(0,76,width,644),new Color(ink.r,ink.g,ink.b,.94f));
+            float contentWidth = Mathf.Min(760, width - 64);
+            float left = (width - contentWidth) / 2;
+            GUILayout.BeginArea(new Rect(left,100,contentWidth,600));
+            menuScroll = GUILayout.BeginScrollView(menuScroll, false, false);
+            GUILayout.Label(world.BossDefeated ? Texts.BossDownHeadline :
+                world.State == RunState.Won ? Texts.WonHeadline : Texts.LostHeadline,menuTitle);
+            GUILayout.Space(12);
+            GUILayout.Label(Texts.RunResult(FormatTime(world.Time),world.Kills,world.Wave) + "\n" +
+                Texts.CoinsEarned(lastRunCoins,world.BossDefeated,profile.coins),menuHeading);
+            GUILayout.Space(14);
+            DrawBuild();
+            GUILayout.Space(16);
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button(Texts.TryAgain,menuButton,GUILayout.MinHeight(56))) StartRun();
+            GUILayout.Space(12);
+            if (GUILayout.Button(Texts.ToHome,menuButton,GUILayout.MinHeight(56)))
+            { started = false; homeTab = HomeTab.Home; }
+            GUILayout.EndHorizontal();
+            GUILayout.EndScrollView();
+            GUILayout.EndArea();
         }
 
         private void DrawUpgradeChoices(float width)
