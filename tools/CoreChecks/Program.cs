@@ -4,6 +4,48 @@ using PetThem.Combat;
 using PetThem.Game;
 
 int passed = 0;
+Check("endless movement crosses old borders and recycles enemies deterministically", () =>
+{
+    var cfg = new BalanceConfig { endlessWorld = true, playerHealth = 100000, petRange = .001f,
+        bossSpawnTime = 1000, maxEnemies = 12 };
+    var a = new CombatWorld(cfg, 42); var b = new CombatWorld(cfg, 42);
+    int recycled = 0;
+    for (int i = 0; i < 3600; i++)
+    {
+        var input = new PlayerInput(new Vec2(1,0),default,false);
+        a.Step(input); b.Step(input);
+        Near(a.Position.x,b.Position.x);
+        True(a.Enemies.Count == b.Enemies.Count && a.Enemies.Count <= cfg.maxEnemies);
+        for (int j = 0; j < a.Enemies.Count; j++)
+        {
+            Near(a.Enemies[j].Position.x,b.Enemies[j].Position.x);
+            Near(a.Enemies[j].Position.y,b.Enemies[j].Position.y);
+            True((a.Enemies[j].Position-a.Position).Length <= cfg.arenaHalfWidth * 3 + .1f);
+        }
+        recycled += a.Events.Count(e => e.type == "relocate");
+    }
+    True(a.Position.x > 200 && recycled > 0 && a.Kills == 0 && a.Experience == 0);
+});
+Check("arrows outside the old arena fly then expire in endless mode", () =>
+{
+    var cfg = new BalanceConfig { endlessWorld = true, playerHealth = 100000, petRange = .001f,
+        bossSpawnTime = 1000, spawnInterval = 900, minSpawnInterval = 900 };
+    var w = new CombatWorld(cfg,42,false,WeaponId.Arrow);
+    for (int i = 0; i < 600; i++) w.Step(new PlayerInput(new Vec2(1,0),default,false));
+    True(w.Position.x > cfg.arenaHalfWidth);
+    w.Step(new PlayerInput(default,new Vec2(0,1),true,false,1));
+    True(w.Projectiles.Count == 1);
+    for (int i = 0; i < 240; i++) w.Step(default);
+    True(w.Projectiles.Count == 0);
+});
+Check("endless boss spawns near a travelling player rather than the origin", () =>
+{
+    var cfg = new BalanceConfig { endlessWorld = true, playerHealth = 100000, petRange = .001f, bossSpawnTime = 20 };
+    var w = new CombatWorld(cfg,42);
+    for (int i = 0; i < 1200; i++) w.Step(new PlayerInput(new Vec2(-1,-1),default,false));
+    True(w.Boss != null && w.Position.x < -40);
+    True((w.Boss!.Position-w.Position).Length > 10 && (w.Boss.Position-w.Position).Length < 15);
+});
 Check("reject invalid config and non-finite input", () =>
 {
     Throws(() => new CombatWorld(new BalanceConfig { punchCooldown = 0 }, 1));

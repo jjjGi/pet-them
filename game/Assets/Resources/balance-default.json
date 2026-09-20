@@ -1,5 +1,6 @@
 {
-  "version": "prototype-0.3",
+  "version": "prototype-0.4-endless",
+  "endlessWorld": true,
   "duration": 180,
   "arenaHalfWidth": 14,
   "arenaHalfHeight": 8,

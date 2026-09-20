@@ -29,6 +29,8 @@ namespace PetThem.Combat
     {
         public string version = "prototype-0.3";
         public float duration = 180, arenaHalfWidth = 14, arenaHalfHeight = 8;
+        // Opt-in so old recordings and arena simulations keep their original rules.
+        public bool endlessWorld;
         public float playerHealth = 100, playerSpeed = 4.5f;
         public float punchDamage = 26, punchRange = 2.6f, punchCooldown = 0.38f, punchKnockback = 1.5f;
         public float petDamage = 12, petRange = 7, petCooldown = 0.9f;
@@ -271,6 +273,17 @@ namespace PetThem.Combat
 
             Vec2 movement = input.move.Length > 1 ? input.move.Normalized : input.move;
             Position = Clamp(Position + movement * (config.playerSpeed * StepSeconds), 0.45f);
+            if (config.endlessWorld)
+            {
+                // Reuse distant enemies without awarding kills/XP or consuming the population cap.
+                foreach (Enemy enemy in enemies)
+                    if (enemy != Boss && (enemy.Position - Position).Length > SpawnRadius * 3)
+                    {
+                        float angle = Next() * (float)Math.PI * 2;
+                        enemy.Position = Position + new Vec2((float)Math.Cos(angle), (float)Math.Sin(angle)) * SpawnRadius;
+                        Emit("relocate", "world", enemy.Id, 0, enemy.Position);
+                    }
+            }
             if (input.aim.Length > 0.05f) Facing = input.aim.Normalized;
 
             SpawnBossWhenDue();
@@ -333,14 +346,15 @@ namespace PetThem.Combat
             random ^= random << 13; random ^= random >> 17; random ^= random << 5;
             return (random & 0x00ffffff) / 16777216f;
         }
-        private Vec2 Clamp(Vec2 p, float margin) => new Vec2(
+        private float SpawnRadius => Math.Max(config.arenaHalfWidth, config.arenaHalfHeight);
+        private Vec2 Clamp(Vec2 p, float margin) => config.endlessWorld ? p : new Vec2(
             Math.Max(-config.arenaHalfWidth + margin, Math.Min(config.arenaHalfWidth - margin, p.x)),
             Math.Max(-config.arenaHalfHeight + margin, Math.Min(config.arenaHalfHeight - margin, p.y)));
         private void Spawn()
         {
             float angle = Next() * (float)Math.PI * 2;
             Vec2 direction = new Vec2((float)Math.Cos(angle), (float)Math.Sin(angle));
-            float distance = Math.Min(config.arenaHalfWidth, config.arenaHalfHeight) * 0.92f;
+            float distance = config.endlessWorld ? SpawnRadius : Math.Min(config.arenaHalfWidth, config.arenaHalfHeight) * 0.92f;
             Vec2 position = Clamp(Position + direction * distance, 0.4f);
             // Avoid spawning on top of the player at an arena edge.
             if ((position - Position).Length < 4) position = Clamp(Position - direction * distance, 0.4f);

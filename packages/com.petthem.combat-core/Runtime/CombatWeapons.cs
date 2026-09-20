@@ -8,6 +8,7 @@ namespace PetThem.Combat
     /// <summary>An arrow in flight. Owned by CombatWorld; Unity only reads it to draw.</summary>
     public sealed class Projectile
     {
+        internal float Travelled;
         public int Id { get; internal set; }
         public Vec2 Position { get; internal set; }
         public Vec2 Velocity { get; internal set; }
@@ -201,7 +202,9 @@ namespace PetThem.Combat
             {
                 Projectile arrow = projectiles[i];
                 arrow.Position += arrow.Velocity * StepSeconds;
-                if (Math.Abs(arrow.Position.x) > config.arenaHalfWidth ||
+                arrow.Travelled += arrow.Velocity.Length * StepSeconds;
+                if (config.endlessWorld ? arrow.Travelled > SpawnRadius * 3 :
+                    Math.Abs(arrow.Position.x) > config.arenaHalfWidth ||
                     Math.Abs(arrow.Position.y) > config.arenaHalfHeight)
                 {
                     projectiles.RemoveAt(i);

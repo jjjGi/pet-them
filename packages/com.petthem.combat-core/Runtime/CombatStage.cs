@@ -94,7 +94,7 @@ namespace PetThem.Combat
 
             float angle = Next() * (float)Math.PI * 2;
             var direction = new Vec2((float)Math.Cos(angle), (float)Math.Sin(angle));
-            float distance = Math.Min(config.arenaHalfWidth, config.arenaHalfHeight) * 0.9f;
+            float distance = config.endlessWorld ? SpawnRadius : Math.Min(config.arenaHalfWidth, config.arenaHalfHeight) * 0.9f;
             Vec2 position = Clamp(Position + direction * distance, config.bossRadius + 0.2f);
             if ((position - Position).Length < 5)
                 position = Clamp(Position - direction * distance, config.bossRadius + 0.2f);

@@ -19,6 +19,8 @@ namespace PetThem.Game
         private BalanceConfig config;
         private RunRecorder recorder;
         private Camera gameCamera;
+        private TravelMap travelMap;
+        private int mapTheme;
         private Transform player, pet;
         private readonly Dictionary<int, GameObject> arrowViews = new Dictionary<int, GameObject>();
         private readonly List<int> staleArrows = new List<int>();
@@ -79,6 +81,8 @@ namespace PetThem.Game
                 Mathf.Sin(orbit) * .75f + Mathf.Sin(world.Time * 5) * .06f, 0) + petStrikeDirection * hop * .3f;
             pet.localScale = new Vector3(.62f * (1 + hop * .15f), .62f * (1 - hop * .1f), 1);
             pet.rotation = Quaternion.Euler(0, 0, Mathf.Sin(world.Time * 5) * 5 - petStrikeDirection.x * hop * 18);
+            player.GetComponent<CreatureMotion>().Pose(world.Time, 0, strike + pull);
+            pet.GetComponent<CreatureMotion>().Pose(world.Time, 1, hop);
             lastVisualPosition = position;
             lastVisualTime = world.Time;
         }
@@ -120,6 +124,7 @@ namespace PetThem.Game
             coachLearned = PlayerPrefs.GetInt(CoachKey, 0);
             coach = new Coach(coachLearned);
             profile = ProfileStore.Load();
+            mapTheme = Mathf.Clamp(PlayerPrefs.GetInt("map.theme", 0), 0, 2);
             if (!profile.IsUnlocked(petChoice)) petChoice = PlayerProfile.StarterPet;
             CreateArena();
             player = Creature("You", Look.Player, 1.0f, 10).transform;
@@ -179,8 +184,8 @@ namespace PetThem.Game
 
         private void Update()
         {
-            gameCamera.orthographicSize = Mathf.Max(config.arenaHalfHeight + 2.8f,
-                (config.arenaHalfWidth + 1) / gameCamera.aspect);
+            gameCamera.orthographicSize = config.endlessWorld ? Mathf.Max(7, 11 / gameCamera.aspect) :
+                Mathf.Max(config.arenaHalfHeight + 2.8f, (config.arenaHalfWidth + 1) / gameCamera.aspect);
             if (Input.GetKeyDown(KeyCode.Escape) && started && world.State == RunState.Playing) TogglePause();
             if (started && !paused && world.State == RunState.Playing && world.HasUpgradeChoice)
             {
@@ -205,6 +210,12 @@ namespace PetThem.Game
                 }
             }
             AnimateCreatures();
+            if (config.endlessWorld)
+            {
+                // Follow the true position, never the animated recoil, to avoid camera shake.
+                gameCamera.transform.position = new Vector3(world.Position.x, world.Position.y, -10);
+                travelMap.Follow(gameCamera, mapTheme);
+            }
             // The sprite carries its own colour, so this tints rather than replaces it.
             player.GetComponent<SpriteRenderer>().color = Time.unscaledTime < hurtFlash ? coral : Color.white;
             SynchronizeEnemies();
@@ -422,6 +433,11 @@ namespace PetThem.Game
 
         private void CreateArena()
         {
+            if (config.endlessWorld)
+            {
+                travelMap = gameObject.AddComponent<TravelMap>();
+                return;
+            }
             Sprite artwork = Art.Arena;
             if (artwork != null)
             {
@@ -481,6 +497,8 @@ namespace PetThem.Game
                     squash = .16f * world.BossTelegraph;
                 view.transform.localScale = new Vector3(size * (1 + squash), size * (1 - squash), size);
                 view.transform.rotation = Quaternion.Euler(0, 0, stride * (enemy.Kind == EnemyKind.Boss ? 2 : 5));
+                view.GetComponent<CreatureMotion>().Pose(world.Time, enemy.Id * 1.7f,
+                    enemy.Kind == EnemyKind.Boss && world.BossState == BossAction.Telegraph ? world.BossTelegraph : 0);
                 // A chilled enemy is tinted towards Bori's blue so the slow is visible.
                 // The sprite is already coloured, so a chilled enemy is tinted rather than recoloured.
                 view.GetComponent<SpriteRenderer>().color = enemy.Slowed
@@ -500,6 +518,7 @@ namespace PetThem.Game
             var renderer = go.AddComponent<SpriteRenderer>();
             renderer.sprite = Art.Creature(look);
             renderer.sortingOrder = order;
+            go.AddComponent<CreatureMotion>().Build(Art.ColorOf(look), order);
             return go;
         }
 
@@ -1062,11 +1081,21 @@ namespace PetThem.Game
             float right = left + 328, rightWidth = contentWidth - 328;
             DrawWeaponRow(right,100,rightWidth);
             DrawPetRow(right,222,rightWidth);
-            if (GUI.Button(new Rect(right,368,rightWidth,86),Texts.Play,bigButton)) StartRun();
+            GUI.Label(new Rect(right,326,rightWidth,28),Texts.MapPicker,small);
+            for (int i = 0; i < 3; i++)
+            {
+                float cell = (rightWidth - 16) / 3;
+                Color previous = GUI.color;
+                GUI.color = mapTheme == i ? mint : paper;
+                if (GUI.Button(new Rect(right + i * (cell + 8),358,cell,48),Texts.MapName(i),menuButton))
+                { mapTheme = i; PlayerPrefs.SetInt("map.theme",i); PlayerPrefs.Save(); }
+                GUI.color = previous;
+            }
+            if (GUI.Button(new Rect(right,426,rightWidth,76),Texts.Play,bigButton)) StartRun();
 
             // What a run is, in the two lines it takes. The coach teaches the controls in the
             // fight now, so this no longer has to.
-            GUILayout.BeginArea(new Rect(right,474,rightWidth,122));
+            GUILayout.BeginArea(new Rect(right,516,rightWidth,96));
             GUILayout.Label(Texts.StartBlurb,body);
             GUILayout.EndArea();
         }

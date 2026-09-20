@@ -54,7 +54,10 @@ namespace PetThem.Game
         /// The one place the build number lives. The editor stamps the Android package with it and
         /// the menu prints it, so the version on the phone and the version on screen cannot drift.
         /// </summary>
-        public const string Version = "0.17.2";
+        public const string Version = "0.18.0";
+        public static string MapPicker => Pick("탐험할 맵 · 끝없이 이동", "Explore · keep moving");
+        public static string MapName(int theme) => theme == 1 ? Pick("모래 정원", "Dunes") :
+            theme == 2 ? Pick("눈꽃 들판", "Snowfield") : Pick("초록 숲", "Woodland");
         public static string MusicSetting(bool enabled) => Pick("배경음악", "Music") + (enabled ? " ON" : " OFF");
         public static string SoundSetting(bool enabled) => Pick("효과음", "Sound") + (enabled ? " ON" : " OFF");
 
