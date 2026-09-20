@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using PetThem.Combat;
 using PetThem.Game;
 
@@ -1511,8 +1512,55 @@ Check("a damaged outbox file is repaired instead of losing the queue", () =>
     // Repaired rather than discarded: a damaged entry is still a run the player finished.
     True(damaged.Due(0) != null);
 });
+Check("the source check references exactly the engine modules the project enables", () =>
+{
+    // Unity ships every module, but the project turns most of them off to keep the build small,
+    // and a disabled module is simply not there at build time. So the source check has to name
+    // the enabled ones rather than reference the folder -- otherwise it compiles happily against
+    // an API the real build cannot find, which is exactly what happened with UnityWebRequest.
+    //
+    // Naming them moves the problem to keeping two lists in step, so this is the thing that keeps
+    // them in step.
+    string root = FindRepoRoot();
+    string manifest = File.ReadAllText(Path.Combine(root, "game/Packages/manifest.json"));
+    string project = File.ReadAllText(Path.Combine(root, "tools/UnitySourceCheck/UnitySourceCheck.csproj"));
+
+    var enabled = new List<string>();
+    foreach (Match match in Regex.Matches(manifest, @"""com\.unity\.modules\.([a-z0-9]+)"""))
+        enabled.Add(match.Groups[1].Value);
+    True(enabled.Count > 0);
+    True(enabled.Contains("imgui"));
+
+    // Part of the base engine rather than removable packages: they never appear in the manifest
+    // and are always there in the real build. Named here so widening the list is a deliberate
+    // edit to this check rather than something that can be slipped into the project file.
+    var alwaysPresent = new[] { "core", "textrendering", "inputlegacy" };
+
+    var referenced = new List<string>();
+    foreach (Match match in Regex.Matches(project, @"UnityEngine\.([A-Za-z0-9]+)Module\.dll"))
+        referenced.Add(match.Groups[1].Value.ToLowerInvariant());
+
+    // Every enabled module is referenced, so the check cannot miss one the build has...
+    foreach (string module in enabled)
+        True(referenced.Contains(module));
+    // ...and nothing else is, so it cannot pass on one the build does not have. That second half
+    // was the missing one: the reference used to be a wildcard over the whole folder.
+    foreach (string module in referenced)
+        True(enabled.Contains(module) || Array.IndexOf(alwaysPresent, module) >= 0);
+});
 Console.WriteLine(passed + " checks passed.");
 return;
+
+// Walks up from wherever the checks were built to the folder holding both the Unity project and
+// the tools, so this works from bin/Release as well as from the repo root.
+static string FindRepoRoot()
+{
+    var directory = new DirectoryInfo(AppContext.BaseDirectory);
+    while (directory != null && !Directory.Exists(Path.Combine(directory.FullName, "game/Packages")))
+        directory = directory.Parent;
+    if (directory == null) throw new Exception("Could not find the repository root from " + AppContext.BaseDirectory);
+    return directory.FullName;
+}
 
 // A finished run as the game would queue it. The numbers do not matter to the queue itself --
 // it carries runs, it does not judge them.

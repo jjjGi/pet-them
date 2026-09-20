@@ -54,7 +54,7 @@ namespace PetThem.Game
         /// The one place the build number lives. The editor stamps the Android package with it and
         /// the menu prints it, so the version on the phone and the version on screen cannot drift.
         /// </summary>
-        public const string Version = "0.17.0";
+        public const string Version = "0.17.1";
         public static string MusicSetting(bool enabled) => Pick("배경음악", "Music") + (enabled ? " ON" : " OFF");
         public static string SoundSetting(bool enabled) => Pick("효과음", "Sound") + (enabled ? " ON" : " OFF");
 
@@ -410,6 +410,11 @@ namespace PetThem.Game
                       : Pick($"보낼 판 {runs}개가 기다리는 중", $"{runs} finished runs waiting to send");
 
         public static string ServerOff => Pick("서버 연결 안 함 (혼자 플레이)", "No server (playing alone)");
+
+        /// <summary>The address box, which is also how the server is turned off: leave it empty.</summary>
+        public static string ServerAddress =>
+            Pick("서버 주소  /  비워두면 보내지 않습니다", "Server address  /  empty means send nowhere");
+        public static string ServerApply => Pick("적용", "APPLY");
         public static string OutboxUnavailable(string reason) =>
             Pick($"기록 대기열을 저장하지 못했습니다: {reason}", $"Could not save the send queue: {reason}");
         public static string Loadout(WeaponId held, PetId buddy) => Weapon(held) + "  /  " + Pet(buddy);

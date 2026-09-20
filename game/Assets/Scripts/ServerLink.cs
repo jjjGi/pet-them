@@ -49,6 +49,28 @@ namespace PetThem.Game
         /// <summary>True when a server has been configured at all.</summary>
         public bool Configured => baseUrl.Length > 0;
 
+        /// <summary>The address the game is sending to, or empty when it is sending nowhere.</summary>
+        public string BaseUrl => baseUrl;
+
+        /// <summary>
+        /// Points the game at a server, or at none when given nothing.
+        /// </summary>
+        /// <remarks>
+        /// Typed into the settings screen rather than baked into the build, because while this is
+        /// being built the address keeps changing: localhost from the editor, the PC's address on
+        /// the network from a phone. A shipped game would carry its own and never ask.
+        ///
+        /// Queued runs are not touched. They were finished under whatever address was set at the
+        /// time, but a run belongs to the player, not to a server, and the next attempt simply
+        /// goes wherever the game is now pointed.
+        /// </remarks>
+        public void UseServer(string url)
+        {
+            baseUrl = (url ?? "").Trim().TrimEnd('/');
+            PlayerPrefs.SetString(BaseUrlKey, baseUrl);
+            PlayerPrefs.Save();
+        }
+
         /// <summary>The last thing that went wrong, for the settings screen. Empty when nothing has.</summary>
         public string Trouble => fileError.Length > 0 ? fileError
             : outbox.discarded.Length > 0 ? outbox.discarded[outbox.discarded.Length - 1] : "";

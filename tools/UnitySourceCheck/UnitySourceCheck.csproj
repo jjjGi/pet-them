@@ -9,6 +9,13 @@
     editor script. A check that misses a whole folder is worse than no check, because it is
     believed.
 
+    It also has to reference only the engine modules the project actually enables. Unity ships
+    every module in this folder, but game/Packages/manifest.json turns most of them off to keep
+    the build small, and a disabled module is not there at build time. Referencing the folder
+    wholesale made this check pass on a UnityWebRequest that the real build could not find, which
+    is the same failure as the missing folder, one level down. The list below mirrors that
+    manifest, and the two are held together by a check in tools/CoreChecks.
+
     Point UnityEditorRoot somewhere else if the editor lives elsewhere.
   -->
   <PropertyGroup>
@@ -18,10 +25,11 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <UnityEditorRoot Condition="'$(UnityEditorRoot)' == '' and '$(UNITY_EDITOR_ROOT)' != ''">$(UNITY_EDITOR_ROOT)</UnityEditorRoot>
     <UnityEditorRoot Condition="'$(UnityEditorRoot)' == ''">C:/Program Files/Unity/Hub/Editor/6000.3.24f1</UnityEditorRoot>
+    <UnityManaged>$(UnityEditorRoot)/Editor/Data/Managed/UnityEngine</UnityManaged>
   </PropertyGroup>
 
   <Target Name="RequireUnity" BeforeTargets="BeforeBuild">
-    <Error Condition="!Exists('$(UnityEditorRoot)/Editor/Data/Managed/UnityEngine')"
+    <Error Condition="!Exists('$(UnityManaged)')"
            Text="Unity not found at '$(UnityEditorRoot)'. Install Unity 6000.3.24f1, or set UNITY_EDITOR_ROOT to where it is." />
   </Target>
 
@@ -29,11 +37,26 @@
     <Compile Include="../../game/Assets/Scripts/*.cs" />
     <Compile Include="../../game/Assets/Editor/*.cs" />
     <ProjectReference Include="../CombatCore/CombatCore.csproj" />
+
     <!--
-      That one folder holds both the UnityEngine.*Module and UnityEditor.*Module assemblies, which
-      is everything the scripts need. The monolithic UnityEditor.dll next to it declares the same
-      types again, so referencing both makes every editor attribute ambiguous.
+      Always present: the engine itself and the editor. The editor half is not governed by the
+      package manifest, so it is referenced whole. CoreModule and TextRenderingModule are part of
+      the base engine rather than removable packages, so they do not appear in the manifest and
+      are still there in the real build; the check in tools/CoreChecks knows about these two by
+      name, so adding a third is a deliberate act rather than a way to quietly widen the list.
     -->
-    <Reference Include="$(UnityEditorRoot)/Editor/Data/Managed/UnityEngine/*.dll" />
+    <Reference Include="$(UnityManaged)/UnityEngine.dll" />
+    <Reference Include="$(UnityManaged)/UnityEngine.CoreModule.dll" />
+    <Reference Include="$(UnityManaged)/UnityEngine.TextRenderingModule.dll" />
+    <Reference Include="$(UnityManaged)/UnityEngine.InputLegacyModule.dll" />
+    <Reference Include="$(UnityManaged)/UnityEditor*.dll" />
+
+    <!-- One line per entry in game/Packages/manifest.json. Adding an API from a module that is
+         not listed there must fail here, which is the whole point of naming them. -->
+    <Reference Include="$(UnityManaged)/UnityEngine.AudioModule.dll" />
+    <Reference Include="$(UnityManaged)/UnityEngine.IMGUIModule.dll" />
+    <Reference Include="$(UnityManaged)/UnityEngine.JSONSerializeModule.dll" />
+    <Reference Include="$(UnityManaged)/UnityEngine.ImageConversionModule.dll" />
+    <Reference Include="$(UnityManaged)/UnityEngine.UnityWebRequestModule.dll" />
   </ItemGroup>
 </Project>

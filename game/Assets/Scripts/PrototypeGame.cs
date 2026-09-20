@@ -84,7 +84,8 @@ namespace PetThem.Game
         }
         private string recordingPath = "", recordingError = "", runId = "";
         private GUIStyle title, heading, body, small, button, menuTitle, menuHeading, menuButton, diagnostic, coaching;
-        private GUIStyle homeTitle, bigButton, tabButton, tabButtonOn;
+        private GUIStyle homeTitle, bigButton, tabButton, tabButtonOn, field;
+        private string serverDraft;
         private string fontReport = "";
         private bool koreanUnavailable;
 
@@ -748,6 +749,8 @@ namespace PetThem.Game
             // alone is easy to miss, so the current one is also the only bold one.
             tabButton = new GUIStyle(GUI.skin.label) { fontSize = 21, alignment = TextAnchor.MiddleCenter };
             tabButtonOn = new GUIStyle(tabButton) { fontStyle = FontStyle.Bold };
+            field = new GUIStyle(GUI.skin.textField) { fontSize = 20 };
+            if (glyphs != null) field.font = glyphs;
             if (glyphs != null) { tabButton.font = tabButtonOn.font = glyphs; }
             tabButton.normal.textColor = new Color(1,1,1,.45f);
             tabButtonOn.normal.textColor = mint;
@@ -1179,6 +1182,16 @@ namespace PetThem.Game
             GUILayout.Space(20);
             GUILayout.Label(link.Configured ? Texts.Unsent(link.Pending) : Texts.ServerOff,small);
             if (link.Trouble.Length > 0) GUILayout.Label(link.Trouble,small);
+            GUILayout.Space(6);
+            // Left empty the game behaves exactly as it did before any of this existed, so the
+            // box doubles as the off switch and there is no second control to keep in step.
+            GUILayout.Label(Texts.ServerAddress,small);
+            GUILayout.BeginHorizontal();
+            serverDraft ??= link.BaseUrl;
+            serverDraft = GUILayout.TextField(serverDraft,field,GUILayout.MinHeight(44));
+            if (GUILayout.Button(Texts.ServerApply,menuButton,GUILayout.MinHeight(44),GUILayout.MaxWidth(150)))
+                link.UseServer(serverDraft);
+            GUILayout.EndHorizontal();
             GUILayout.Space(12);
             GUILayout.Label(Texts.InfoHeadline,small);
             GUILayout.Label(Texts.Build,body);

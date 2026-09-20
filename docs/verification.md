@@ -1365,3 +1365,104 @@ Unity 클라이언트는 서버 프로젝트(net10.0)를 **참조할 수 없다.
 - **Unity가 실제로 이 서버를 호출하는 것을 아무도 못 봤다.** 양쪽 검사는 통과하지만
   `UnityWebRequest` 경로는 실기기·에디터 어느 쪽에서도 돌려본 적이 없다.
 - 로그인은 여전히 게스트뿐이고, 서버 저장은 메모리뿐이다.
+
+## 0.17.1 — 검사가 거짓 통과를 준 건
+
+### 무슨 일이 있었나
+
+`ServerLink.cs`를 쓰고 `scripts/check.ps1`을 돌렸다. **Unity 소스 컴파일 경고 0 / 오류 0.**
+그런데 실제 Android 빌드가 죽었다.
+
+~~~
+Assets\Scripts\ServerLink.cs(158,17): error CS1069:
+The type name 'UnityWebRequest' could not be found in the namespace 'UnityEngine.Networking'.
+Enable the built in package 'Unity Web Request' in the Package Manager window to fix this error.
+~~~
+
+### 원인
+
+Unity는 내장 모듈을 **전부** 에디터 폴더에 깔아두지만, 프로젝트가 실제로 쓰는 것은
+`game/Packages/manifest.json`이 정한다. 이 프로젝트는 빌드 크기 때문에 **4개만** 켜두고 있었다.
+
+~~~json
+"com.unity.modules.audio", "com.unity.modules.imgui",
+"com.unity.modules.jsonserialize", "com.unity.modules.imageconversion"
+~~~
+
+`UnityWebRequest`는 그 목록에 없다. **꺼진 모듈은 빌드 시점에 존재하지 않는다.**
+
+그런데 `tools/UnitySourceCheck`는 이렇게 참조하고 있었다.
+
+~~~xml
+<Reference Include="$(UnityEditorRoot)/Editor/Data/Managed/UnityEngine/*.dll" />
+~~~
+
+**폴더 전체.** 즉 실제 빌드에는 없는 DLL까지 전부 참조해서, 실제로는 못 쓰는 API에 대해
+"컴파일 됩니다"라고 답했다.
+
+### 이 검사는 전에도 같은 실수를 한 적이 있다
+
+csproj 주석에 이렇게 적혀 있었다.
+
+> 이전 버전은 런타임 스크립트만 검사해서 깨끗하다고 보고했고, Android 빌드가 에디터
+> 스크립트의 using 누락으로 실패했다. **폴더 하나를 통째로 빠뜨리는 검사는 검사가 없는 것보다
+> 나쁘다. 믿기 때문이다.**
+
+이번 건은 **같은 실수의 한 단계 아래**다. 폴더를 빠뜨린 게 아니라 폴더를 너무 많이 넣었다.
+
+### 고친 방법
+
+1. `manifest.json`에 `com.unity.modules.unitywebrequest`를 추가했다.
+2. `UnitySourceCheck`가 **켜진 모듈만 이름으로 참조**하도록 바꿨다. 와일드카드를 없앴다.
+   (에디터 쪽 DLL은 manifest가 관장하지 않으므로 `UnityEditor*.dll`은 그대로 둔다.)
+3. 그러면 **목록이 두 개로 늘어난다.** 그래서 둘이 어긋날 수 없게 검사를 하나 더 넣었다 —
+   `manifest.json`의 모듈 집합과 csproj의 참조 집합이 **정확히 같아야 한다.**
+
+### 고치는 도중에 알게 된 것: manifest가 전부가 아니다
+
+와일드카드를 떼자마자 컴파일이 깨졌다. `Font`(`TextRenderingModule`),
+`Input`(`InputLegacyModule`)이 **manifest에도 packages-lock에도 없는데 실제 빌드에는 있다.**
+제거 가능한 패키지가 아니라 엔진 기본에 포함된 모듈이기 때문이다.
+
+그래서 검사의 모델을 고쳤다. "참조 집합 == manifest 집합"이 아니라
+
+> 참조 집합 == manifest 집합 ∪ **항상 있는 모듈** (`core`, `textrendering`, `inputlegacy`)
+
+항상 있는 목록은 **경험적으로 찾았다** — 컴파일러가 하나씩 알려줬고, 근거는 그 manifest로
+**실제 Unity 빌드가 통과한다**는 사실이다. 목록을 검사 코드에 이름으로 박아서,
+넓히는 것이 프로젝트 파일에 슬쩍 끼워 넣는 일이 아니라 **검사를 고치는 의도적인 행동**이 되게 했다.
+
+### 양방향으로 이빨을 확인했다
+
+- 켜진 모듈의 참조를 **빼면** 실패한다 → 빌드에 있는 것을 놓치지 않는다
+- 꺼진 모듈(`PhysicsModule`)을 **넣으면** 실패한다 → 빌드에 없는 것을 통과시키지 않는다
+
+두 번째가 원래 없던 쪽이다. 와일드카드가 딱 그 구멍이었다.
+
+### 덤으로 드러난 것
+
+XML 주석에 `--`를 쓸 수 없다. 주석을 길게 쓰다가 csproj가 통째로 로드 불가가 됐고,
+**Unity 빌드는 멀쩡히 성공했다** — 그 파일을 쓰지 않으니까. 검사만 죽었다.
+
+### 이번엔 검사에 이빨이 있는지 확인했다
+
+0.15.0에서 배운 것을 적용했다. 참조 한 줄을 빼고 돌려서 **실제로 실패하는 것을 확인**한 뒤
+복원했다. 통과하는 검사가 아니라 버그를 넣었을 때 실패하는 검사여야 한다.
+
+### 검증
+
+- 게임 검사 **60개** (59 → 60), 서버 검사 10개.
+- Unity 소스 컴파일 경고 0 / 오류 0 — **이번에는 실제 빌드와 같은 조건에서.**
+- 전투 코어 변경 없음.
+
+### 같이 들어온 것: 서버 주소 입력칸
+
+`server.baseUrl`을 `PlayerPrefs`에만 두고 **입력할 방법을 만들지 않았다.**
+설정할 수 없는 설정은 설정이 아니다. 설정 탭에 입력칸과 `적용` 버튼을 넣었다.
+
+비워두면 서버로 아무것도 보내지 않는다. 즉 **입력칸이 곧 끄는 스위치**이고,
+따로 둘 필요가 없다.
+
+빌드에 주소를 박지 않은 이유는 개발 중에 주소가 계속 바뀌기 때문이다 —
+에디터에서는 localhost, 폰에서는 PC의 네트워크 주소. 출시 빌드는 자기 주소를 갖고 다니고
+아무에게도 묻지 않을 것이다.
