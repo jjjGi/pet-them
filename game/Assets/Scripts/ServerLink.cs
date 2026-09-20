@@ -41,7 +41,7 @@ namespace PetThem.Game
         private RunOutbox outbox = new RunOutbox();
         private string baseUrl = "", token = "";
         private bool sending;
-        private string fileError = "";
+        private string fileError = "", lastSend = "";
 
         /// <summary>Runs waiting to go out. Shown on the settings screen.</summary>
         public int Pending => outbox.Count;
@@ -70,6 +70,16 @@ namespace PetThem.Game
             PlayerPrefs.SetString(BaseUrlKey, baseUrl);
             PlayerPrefs.Save();
         }
+
+        /// <summary>
+        /// How the last upload attempt went, in words, or empty before there has been one.
+        /// </summary>
+        /// <remarks>
+        /// Without this the settings screen shows a queue that does not move and no reason why,
+        /// which is the same failure as a screen full of empty boxes: something is wrong and the
+        /// only person who can act on it has been told nothing. Whatever went wrong, say it.
+        /// </remarks>
+        public string LastSend => lastSend;
 
         /// <summary>The last thing that went wrong, for the settings screen. Empty when nothing has.</summary>
         public string Trouble => fileError.Length > 0 ? fileError
@@ -127,9 +137,10 @@ namespace PetThem.Game
         {
             using UnityWebRequest request = Post("/v1/session", "{}");
             yield return request.SendWebRequest();
-            if (!Succeeded(request)) yield break;
+            if (!Succeeded(request)) { lastSend = Describe(request); yield break; }
             var session = JsonUtility.FromJson<SessionReply>(request.downloadHandler.text);
-            if (session == null || string.IsNullOrEmpty(session.token)) yield break;
+            if (session == null || string.IsNullOrEmpty(session.token))
+            { lastSend = Texts.SendNoSession; yield break; }
             token = session.token;
             PlayerPrefs.SetString(TokenKey, token);
             PlayerPrefs.Save();
@@ -144,6 +155,7 @@ namespace PetThem.Game
             bool broken = request.result == UnityWebRequest.Result.ConnectionError
                           || request.result == UnityWebRequest.Result.DataProcessingError;
             UploadVerdict verdict = RunOutbox.VerdictFor(request.responseCode, broken);
+            lastSend = verdict == UploadVerdict.Done ? Texts.SendOk : Describe(request);
             if (verdict == UploadVerdict.Reauthenticate)
             {
                 // The run is fine and the session is not. Drop the token so the next attempt opens
@@ -169,6 +181,19 @@ namespace PetThem.Game
 
         private static bool Succeeded(UnityWebRequest request) =>
             request.result == UnityWebRequest.Result.Success;
+
+        /// <summary>
+        /// What happened, in terms someone standing in front of the phone can act on.
+        /// </summary>
+        /// <remarks>
+        /// A reply that never arrived and a reply that said no are different problems with
+        /// different answers -- check the address and the network, or look at the server -- so
+        /// they do not get the same message.
+        /// </remarks>
+        private static string Describe(UnityWebRequest request) =>
+            request.responseCode > 0
+                ? Texts.SendRefused(request.responseCode)
+                : Texts.SendUnreachable(request.error ?? "");
 
         private static double Now => (DateTime.UtcNow - DateTime.UnixEpoch).TotalSeconds;
 

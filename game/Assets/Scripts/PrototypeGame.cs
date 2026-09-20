@@ -1181,6 +1181,7 @@ namespace PetThem.Game
 
             GUILayout.Space(20);
             GUILayout.Label(link.Configured ? Texts.Unsent(link.Pending) : Texts.ServerOff,small);
+            if (link.LastSend.Length > 0) GUILayout.Label(link.LastSend,small);
             if (link.Trouble.Length > 0) GUILayout.Label(link.Trouble,small);
             GUILayout.Space(6);
             // Left empty the game behaves exactly as it did before any of this existed, so the

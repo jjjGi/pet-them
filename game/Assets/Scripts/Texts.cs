@@ -54,7 +54,7 @@ namespace PetThem.Game
         /// The one place the build number lives. The editor stamps the Android package with it and
         /// the menu prints it, so the version on the phone and the version on screen cannot drift.
         /// </summary>
-        public const string Version = "0.17.1";
+        public const string Version = "0.17.2";
         public static string MusicSetting(bool enabled) => Pick("배경음악", "Music") + (enabled ? " ON" : " OFF");
         public static string SoundSetting(bool enabled) => Pick("효과음", "Sound") + (enabled ? " ON" : " OFF");
 
@@ -415,6 +415,16 @@ namespace PetThem.Game
         public static string ServerAddress =>
             Pick("서버 주소  /  비워두면 보내지 않습니다", "Server address  /  empty means send nowhere");
         public static string ServerApply => Pick("적용", "APPLY");
+
+        // How the last upload went. A queue that does not move and says nothing is the worst of
+        // both: something is wrong and nobody has been told what.
+        public static string SendOk => Pick("마지막 전송: 성공", "Last send: went through");
+        public static string SendUnreachable(string reason) =>
+            Pick($"마지막 전송: 서버에 닿지 못함 ({reason})", $"Last send: could not reach the server ({reason})");
+        public static string SendRefused(long status) =>
+            Pick($"마지막 전송: 서버가 거절함 (HTTP {status})", $"Last send: the server said no (HTTP {status})");
+        public static string SendNoSession =>
+            Pick("마지막 전송: 세션을 받지 못함", "Last send: no session came back");
         public static string OutboxUnavailable(string reason) =>
             Pick($"기록 대기열을 저장하지 못했습니다: {reason}", $"Could not save the send queue: {reason}");
         public static string Loadout(WeaponId held, PetId buddy) => Weapon(held) + "  /  " + Pet(buddy);
