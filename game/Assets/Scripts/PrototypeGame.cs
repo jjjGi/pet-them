@@ -37,6 +37,7 @@ namespace PetThem.Game
         private float drawAmount;
         private float accumulator, hurtFlash;
         private GameAudio gameAudio;
+        private ServerLink link;
         private Coach coach;
         private Vec2 coachPosition;
         private int coachLearned;
@@ -81,7 +82,7 @@ namespace PetThem.Game
             lastVisualPosition = position;
             lastVisualTime = world.Time;
         }
-        private string recordingPath = "", recordingError = "";
+        private string recordingPath = "", recordingError = "", runId = "";
         private GUIStyle title, heading, body, small, button, menuTitle, menuHeading, menuButton, diagnostic, coaching;
         private GUIStyle homeTitle, bigButton, tabButton, tabButtonOn;
         private string fontReport = "";
@@ -104,6 +105,7 @@ namespace PetThem.Game
             if (gameCamera == null) gameCamera = new GameObject("Main Camera").AddComponent<Camera>();
             if (FindFirstObjectByType<AudioListener>() == null) gameCamera.gameObject.AddComponent<AudioListener>();
             gameAudio = gameObject.AddComponent<GameAudio>();
+            link = gameObject.AddComponent<ServerLink>();
             gameCamera.tag = "MainCamera";
             gameCamera.orthographic = true;
             gameCamera.transform.position = new Vector3(0, 0, -10);
@@ -168,7 +170,9 @@ namespace PetThem.Game
             lastVisualPosition = Vector3.zero;
             ClearInput();
             recordingError = "";
-            try { recorder = new RunRecorder(world); recordingPath = recorder.FilePath; }
+            runId = DateTime.UtcNow.ToString("yyyyMMddTHHmmssfff") + "-" +
+                Guid.NewGuid().ToString("N").Substring(0, 8);
+            try { recorder = new RunRecorder(world, runId); recordingPath = recorder.FilePath; }
             catch (Exception ex) { recordingError = Texts.RecordingUnavailable(ex.Message); Debug.LogWarning(recordingError); }
         }
 
@@ -369,6 +373,9 @@ namespace PetThem.Game
             lastRunCoins = world.Coins;
             profile.AddRunReward(lastRunCoins);
             ProfileStore.Save(profile);
+            // Filed at the same moment, from the same place. The upload is the server's copy of
+            // a decision already made locally, not a thing the player has to wait for.
+            link.Record(world, runId);
         }
 
         private void Buy(PetId target)
@@ -1170,6 +1177,9 @@ namespace PetThem.Game
                 ForgetCoaching();
 
             GUILayout.Space(20);
+            GUILayout.Label(link.Configured ? Texts.Unsent(link.Pending) : Texts.ServerOff,small);
+            if (link.Trouble.Length > 0) GUILayout.Label(link.Trouble,small);
+            GUILayout.Space(12);
             GUILayout.Label(Texts.InfoHeadline,small);
             GUILayout.Label(Texts.Build,body);
             GUILayout.Space(8);

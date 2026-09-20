@@ -54,7 +54,7 @@ namespace PetThem.Game
         /// The one place the build number lives. The editor stamps the Android package with it and
         /// the menu prints it, so the version on the phone and the version on screen cannot drift.
         /// </summary>
-        public const string Version = "0.16.0";
+        public const string Version = "0.17.0";
         public static string MusicSetting(bool enabled) => Pick("배경음악", "Music") + (enabled ? " ON" : " OFF");
         public static string SoundSetting(bool enabled) => Pick("효과음", "Sound") + (enabled ? " ON" : " OFF");
 
@@ -399,6 +399,19 @@ namespace PetThem.Game
         public static string Wallet(int coins) => Pick($"코인  {coins}", $"COINS  {coins}");
 
         public static string ToHome => Pick("홈으로", "HOME");
+
+        /// <summary>How many finished runs are still waiting to reach the server.</summary>
+        /// <remarks>
+        /// Shown rather than hidden. A player who has been offline has earned those coins and is
+        /// owed the knowledge that the game still has them.
+        /// </remarks>
+        public static string Unsent(int runs) =>
+            runs == 0 ? Pick("전송할 기록 없음", "Nothing waiting to send")
+                      : Pick($"보낼 판 {runs}개가 기다리는 중", $"{runs} finished runs waiting to send");
+
+        public static string ServerOff => Pick("서버 연결 안 함 (혼자 플레이)", "No server (playing alone)");
+        public static string OutboxUnavailable(string reason) =>
+            Pick($"기록 대기열을 저장하지 못했습니다: {reason}", $"Could not save the send queue: {reason}");
         public static string Loadout(WeaponId held, PetId buddy) => Weapon(held) + "  /  " + Pet(buddy);
         public static string InfoHeadline => Pick("이 빌드에 대하여", "ABOUT THIS BUILD");
 

@@ -1372,8 +1372,155 @@ Check("what the coach has taught survives between runs", () =>
     True(!coach.Finished);
     True(coach.Lesson == CoachLesson.Move);
 });
+Check("a finished run waits in the outbox until the server has it", () =>
+{
+    var outbox = new RunOutbox();
+    True(outbox.Count == 0);
+    True(outbox.Due(0) == null);
+
+    True(outbox.Enqueue(Pending("a"), 100));
+    True(outbox.Count == 1);
+    // Queued at 100 and due at 100: the first try is immediate, not after a delay.
+    True(outbox.Due(100)?.runId == "a");
+
+    // The same run queued twice is still one run. Ending a run must not be able to pay it twice
+    // even before the server's own guard gets a chance to say so.
+    True(!outbox.Enqueue(Pending("a"), 101));
+    True(outbox.Count == 1);
+
+    outbox.Record("a", UploadVerdict.Done, 101);
+    True(outbox.Count == 0);
+    True(outbox.Due(999) == null);
+    True(outbox.discarded.Length == 0);
+});
+Check("a run that could still work is kept, and the gap widens", () =>
+{
+    var outbox = new RunOutbox();
+    outbox.Enqueue(Pending("slow"), 0);
+
+    double at = 0;
+    double previous = 0;
+    for (int attempt = 1; attempt <= 6; attempt++)
+    {
+        True(outbox.Due(at)?.runId == "slow");
+        outbox.Record("slow", UploadVerdict.Retry, at);
+        // Nothing is due the instant after a failure, or the phone would spin on it.
+        True(outbox.Due(at) == null);
+
+        double gap = RunOutbox.Backoff(attempt);
+        True(gap >= previous);
+        True(outbox.Due(at + gap - .001) == null);
+        True(outbox.Due(at + gap)?.runId == "slow");
+        previous = gap;
+        at += gap;
+    }
+
+    // Still carried after six failures. The coins were earned; the network is not the player's
+    // fault and nothing here is allowed to quietly decide otherwise.
+    True(outbox.Count == 1);
+    True(outbox.discarded.Length == 0);
+
+    // The gap stops widening, so a queue left overnight still goes out promptly in the morning.
+    True(RunOutbox.Backoff(400) == RunOutbox.MaxDelaySeconds);
+    True(RunOutbox.Backoff(1) == RunOutbox.FirstDelaySeconds);
+    True(RunOutbox.Backoff(0) == 0);
+});
+Check("a run the server will never take is dropped, and says so", () =>
+{
+    var outbox = new RunOutbox();
+    outbox.Enqueue(Pending("bad"), 0);
+    outbox.Record("bad", UploadVerdict.Rejected, 0);
+
+    True(outbox.Count == 0);
+    True(outbox.discarded.Length == 1);
+    True(outbox.discarded[0].Contains("bad"));
+
+    // Filing a result for something that is no longer queued is not an error: two attempts can
+    // be in flight when the app is resumed.
+    outbox.Record("bad", UploadVerdict.Done, 1);
+    True(outbox.Count == 0);
+});
+Check("an http reply means keep trying, stop trying, or get a new session", () =>
+{
+    // Nothing was decided: the run stays.
+    True(RunOutbox.VerdictFor(0, networkError: true) == UploadVerdict.Retry);
+    True(RunOutbox.VerdictFor(0, networkError: false) == UploadVerdict.Retry);
+    True(RunOutbox.VerdictFor(408, false) == UploadVerdict.Retry);
+    True(RunOutbox.VerdictFor(429, false) == UploadVerdict.Retry);
+    foreach (long status in new long[] { 500, 502, 503, 504 })
+        True(RunOutbox.VerdictFor(status, false) == UploadVerdict.Retry);
+
+    // The server has it.
+    foreach (long status in new long[] { 200, 201, 204 })
+        True(RunOutbox.VerdictFor(status, false) == UploadVerdict.Done);
+
+    // The run is fine and the session is not, which is neither of the above.
+    True(RunOutbox.VerdictFor(401, false) == UploadVerdict.Reauthenticate);
+
+    // The server read it and said no. Sending it again gets the same no, so keeping it would be
+    // a loop rather than persistence.
+    foreach (long status in new long[] { 400, 403, 404, 409, 422 })
+        True(RunOutbox.VerdictFor(status, false) == UploadVerdict.Rejected);
+});
+Check("the outbox is emptied oldest first and cannot grow without limit", () =>
+{
+    var outbox = new RunOutbox();
+    for (int i = 0; i < 5; i++) outbox.Enqueue(Pending("run-" + i), 0);
+    // A player who was offline for a week is paid in the order they played.
+    for (int i = 0; i < 5; i++)
+    {
+        True(outbox.Due(0)?.runId == "run-" + i);
+        outbox.Record("run-" + i, UploadVerdict.Done, 0);
+    }
+    True(outbox.Count == 0);
+
+    var full = new RunOutbox();
+    for (int i = 0; i < RunOutbox.Capacity + 10; i++) full.Enqueue(Pending("r" + i), 0);
+    True(full.Count == RunOutbox.Capacity);
+    // The oldest went, and the newest -- the ones the player remembers earning -- are still here.
+    True(full.Due(0)?.runId == "r10");
+    True(full.discarded.Length == 10);
+});
+Check("a damaged outbox file is repaired instead of losing the queue", () =>
+{
+    var outbox = new RunOutbox { pending = null, discarded = null };
+    True(outbox.Normalize().Count == 0);
+    True(outbox.Count == 0);
+
+    var damaged = new RunOutbox
+    {
+        pending = new[]
+        {
+            new PendingRun { runId = "keep", kills = 5, seconds = 60 },
+            new PendingRun { runId = "keep" },
+            new PendingRun { runId = "" },
+            new PendingRun { runId = "fix", attempts = -3, kills = -1, seconds = float.NaN,
+                nextAttemptAt = double.NaN },
+        },
+    };
+    // Six: the duplicate, the one with no id, and four separate values on "fix".
+    IReadOnlyList<string> repairs = damaged.Normalize();
+    True(repairs.Count == 6);
+    True(damaged.Count == 2);
+
+    // Order is kept, so the queue still drains oldest first after a repair.
+    True(damaged.pending[0].runId == "keep" && damaged.pending[1].runId == "fix");
+    PendingRun fixedUp = damaged.pending[1];
+    True(fixedUp.attempts == 0 && fixedUp.kills == 0);
+    True(fixedUp.seconds == 0 && fixedUp.nextAttemptAt == 0);
+    // Repaired rather than discarded: a damaged entry is still a run the player finished.
+    True(damaged.Due(0) != null);
+});
 Console.WriteLine(passed + " checks passed.");
 return;
+
+// A finished run as the game would queue it. The numbers do not matter to the queue itself --
+// it carries runs, it does not judge them.
+static PendingRun Pending(string runId) => new()
+{
+    runId = runId, seed = 7, weapon = WeaponId.Punch.ToString(), pet = PetId.Mochi.ToString(),
+    kills = 20, seconds = 60,
+};
 
 // A translation that fell through to the default case comes back as the raw enum name.
 void Translated(string text, string idName)

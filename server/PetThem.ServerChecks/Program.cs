@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PetThem.Combat;
+using PetThem.Game;
 using PetThem.Server;
 
 // Starts the real server on a port the OS picks and talks to it over real HTTP. Calling the
@@ -174,6 +175,51 @@ await Check("the starter pet is not for sale and unknown pets are refused", asyn
     True(starter.StatusCode == HttpStatusCode.Conflict, $"starter returned {starter.StatusCode}");
     HttpResponseMessage nonsense = await Unlock(token, "Rex");
     True(nonsense.StatusCode == HttpStatusCode.BadRequest, $"unknown pet returned {nonsense.StatusCode}");
+});
+
+await Check("what the client queues is what the server accepts", async () =>
+{
+    // The game cannot reference this server project, so the submission shape exists on both sides.
+    // This is the only thing standing between them and a silent drift -- a renamed field would
+    // deserialize to a default here and pay the wrong amount, with nothing failing to say so.
+    var queued = new PendingRun
+    {
+        runId = "contract-" + Guid.NewGuid().ToString("N")[..8],
+        seed = 909, weapon = WeaponId.Arrow.ToString(), pet = PetId.Coco.ToString(),
+        kills = 61, seconds = 123.5f, bossDefeated = true,
+        // Bookkeeping the client keeps for itself. The server has no business seeing it.
+        attempts = 3, nextAttemptAt = 1_700_000_000,
+    };
+
+    // Unity writes this with JsonUtility, which serializes public *fields* under their own
+    // names. System.Text.Json ignores fields unless told to, so IncludeFields is what makes this
+    // produce the body the game will actually send rather than an empty object -- which is the
+    // first thing this check caught.
+    string body = JsonSerializer.Serialize(queued,
+        new JsonSerializerOptions(JsonSerializerDefaults.Web) { IncludeFields = true });
+    True(body.Contains("\"runId\""), $"the client body has no runId: {body}");
+    var parsed = JsonSerializer.Deserialize<Contracts.RunSubmission>(body,
+        new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+
+    True(parsed.RunId == queued.runId, $"runId came over as '{parsed.RunId}'");
+    True(parsed.Seed == queued.seed, $"seed came over as {parsed.Seed}");
+    True(parsed.Weapon == queued.weapon, $"weapon came over as '{parsed.Weapon}'");
+    True(parsed.Pet == queued.pet, $"pet came over as '{parsed.Pet}'");
+    True(parsed.Kills == queued.kills, $"kills came over as {parsed.Kills}");
+    True(Math.Abs(parsed.Seconds - queued.seconds) < 0.001f, $"seconds came over as {parsed.Seconds}");
+    True(parsed.BossDefeated == queued.bossDefeated, "bossDefeated did not survive");
+
+    // And the real server takes that same body over the wire.
+    string token = await NewSession();
+    using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/runs");
+    request.Headers.Add("Authorization", "Bearer " + token);
+    request.Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
+    HttpResponseMessage response = await http.SendAsync(request);
+    True(response.StatusCode == HttpStatusCode.OK, $"the server answered {response.StatusCode}");
+
+    Contracts.RunReceipt receipt = await Read<Contracts.RunReceipt>(response);
+    True(receipt.CoinsAwarded > 0, "a real run paid nothing");
+    True(!receipt.AlreadyCounted, "a first upload was treated as a repeat");
 });
 
 await app.StopAsync();

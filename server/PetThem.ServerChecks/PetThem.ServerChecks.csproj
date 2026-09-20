@@ -12,6 +12,12 @@
     <!-- Starts the real server, so the checks reference it rather than reimplementing it. -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <ProjectReference Include="../PetThem.Server/PetThem.Server.csproj" />
+    <!--
+      The client queue, compiled in so the two halves of the contract can be checked against each
+      other. The game cannot reference this server project, so the submission shape exists twice;
+      this is what stops the copies from drifting apart.
+    -->
+    <Compile Include="../../game/Assets/Scripts/RunOutbox.cs" />
   </ItemGroup>
 
 </Project>

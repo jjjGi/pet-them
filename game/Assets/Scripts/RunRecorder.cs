@@ -24,9 +24,14 @@ namespace PetThem.Game
         }
         private StreamWriter writer;
         public string FilePath { get; }
-        public RunRecorder(CombatWorld world)
+
+        /// <param name="id">
+        /// The run's identity, made by the caller rather than here. The upload queue needs the
+        /// same id, and a run whose log file could not be opened still has to reach the server --
+        /// so the two cannot share an id that only exists once a file has been created.
+        /// </param>
+        public RunRecorder(CombatWorld world, string id)
         {
-            string id = DateTime.UtcNow.ToString("yyyyMMddTHHmmssfff") + "-" + Guid.NewGuid().ToString("N").Substring(0, 8);
             string directory = Path.Combine(Application.persistentDataPath, "runs");
             Directory.CreateDirectory(directory);
             FilePath = Path.Combine(directory, id + ".jsonl");

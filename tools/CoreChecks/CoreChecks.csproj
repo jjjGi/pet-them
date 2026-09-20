@@ -4,4 +4,7 @@
     <Compile Include="../../game/Assets/Scripts/Texts.cs" />
     <!-- The tutorial decides when each lesson fires. That is only worth having if it can be
          run without the editor, so it has no UnityEngine dependency either. -->
-    <Compile Include="../../game/Assets/Scripts/Coach.cs" /></ItemGroup></Project>
+    <Compile Include="../../game/Assets/Scripts/Coach.cs" />
+    <!-- When to retry an upload and when to stop is wrong for months if it cannot be run
+         without the editor, so it has no UnityEngine dependency either. -->
+    <Compile Include="../../game/Assets/Scripts/RunOutbox.cs" /></ItemGroup></Project>

@@ -38,17 +38,36 @@ namespace PetThem.Editor
         }
 
         [MenuItem("PET THEM/Build Android development APK")]
-        public static void BuildAndroid()
+        public static void BuildAndroid() => BuildApk(BuildOptions.Development, "development");
+
+        /// <summary>
+        /// The same build without the development flag, which is the one small enough to send.
+        /// </summary>
+        /// <remarks>
+        /// The development build carries the profiler and debug symbols, and they are nearly all
+        /// of its size: 31.2 MiB against 16.7 MiB for 0.15.0, almost entirely libunity.so at
+        /// 24.0 MB rather than 11.4 MB. That put it over the 30 MiB limit for handing a file to
+        /// the user, so this exists to avoid editing the build script every time one is needed.
+        ///
+        /// It is the same game from the same commit. What it loses is the development console, so
+        /// a crash on the phone has nothing to report itself with -- prefer the development build
+        /// when that matters and the size allows.
+        /// </remarks>
+        [MenuItem("PET THEM/Build Android release APK")]
+        public static void BuildAndroidRelease() => BuildApk(BuildOptions.None, "release");
+
+        private static void BuildApk(BuildOptions options, string label)
         {
             CreateScene();
             Directory.CreateDirectory("Builds");
             BuildReport report = BuildPipeline.BuildPlayer(new BuildPlayerOptions {
                 scenes = new[] { "Assets/Scenes/Prototype.unity" },
-                locationPathName = "Builds/PetThem-development.apk",
+                locationPathName = $"Builds/PetThem-{label}.apk",
                 target = BuildTarget.Android,
-                options = BuildOptions.Development
+                options = options
             });
-            if (report.summary.result != BuildResult.Succeeded) throw new Exception("Android build failed.");
+            if (report.summary.result != BuildResult.Succeeded)
+                throw new Exception($"Android {label} build failed.");
         }
     }
 }
