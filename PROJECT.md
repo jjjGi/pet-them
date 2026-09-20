@@ -536,6 +536,7 @@ MCP의 서버는 반드시 클라우드 서버를 의미하지 않는다.
 - tools/CoreChecks/: 외부 테스트 패키지가 필요 없는 핵심 규칙 검증 실행기.
 - game/Assets/Resources/balance-default.json: 현재 기본 설정의 단일 원본.
 - game/Assets/Scripts/Coach.cs: 첫 30초 수업의 발동·완료 조건. UnityEngine 비의존이라 CoreChecks에서 검사한다.
+- docs/portfolio.md: 면접 재료. 문제·접근·결과와 실제 수치, 미검증 항목은 단서와 함께.
 - docs/telemetry.md: 로그 필드, 종료 처리, 재현 범위.
 - docs/verification.md: 실제 검사 결과와 미검증 사항.
 - README.md: 실행 방법.
