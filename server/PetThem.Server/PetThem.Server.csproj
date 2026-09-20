@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      The same combat rules the game ships. The server prices a run with the code that played it,
+      which is only possible because the core has no UnityEngine dependency. Writing the payout
+      formula a second time here is exactly what this reference exists to prevent.
+    -->
+    <ProjectReference Include="../../tools/CombatCore/CombatCore.csproj" />
+    <!-- And the same numbers, copied next to the binary so the server reads the shipped file. -->
+    <Content Include="../../game/Assets/Resources/balance-default.json"
+             Link="balance-default.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

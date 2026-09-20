@@ -36,3 +36,7 @@
 Thumbs.db
 # Unity 6 editor scratch directory
 .utmp/
+
+# Server build output
+server/**/bin/
+server/**/obj/

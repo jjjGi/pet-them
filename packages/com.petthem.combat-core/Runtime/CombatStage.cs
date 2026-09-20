@@ -15,13 +15,30 @@ namespace PetThem.Combat
         /// <summary>Seconds until the boss arrives, or 0 once it has.</summary>
         public float SecondsToBoss => Math.Max(0, config.bossSpawnTime - Time);
 
+        /// <summary>Coins earned so far.</summary>
+        public int Coins => CoinsFor(config, Kills, Time, BossDefeated);
+
         /// <summary>
-        /// Coins earned so far. Meant to be spent between runs in a shop that does not exist yet,
-        /// so nothing reads this except the result screen and the run log.
+        /// What a finished run is worth. The one place the payout is decided.
         /// </summary>
-        public int Coins => (int)(Kills * config.coinsPerKill
-            + (BossDefeated ? config.coinsPerBossKill : 0)
-            + Time * config.coinsPerSecondSurvived);
+        /// <remarks>
+        /// Static and free of run state because the server has to price a run it did not play:
+        /// it is handed the kills, the seconds and whether the boss went down, and must arrive at
+        /// the same number the game showed the player. Leaving the formula inline in the property
+        /// would have meant writing it a second time on the server, where it could quietly drift.
+        ///
+        /// The config passed in must be the run's own -- the twisted copy, not the defaults --
+        /// because a twist multiplies these very values. The server derives it from the seed.
+        /// </remarks>
+        public static int CoinsFor(BalanceConfig config, int kills, float seconds, bool bossDefeated)
+        {
+            if (config == null) throw new ArgumentNullException(nameof(config));
+            if (kills < 0) throw new ArgumentOutOfRangeException(nameof(kills));
+            if (!Vec2.Finite(seconds) || seconds < 0) throw new ArgumentOutOfRangeException(nameof(seconds));
+            return (int)(kills * config.coinsPerKill
+                + (bossDefeated ? config.coinsPerBossKill : 0)
+                + seconds * config.coinsPerSecondSurvived);
+        }
 
         public float HealthOf(EnemyKind kind)
         {

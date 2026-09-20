@@ -19,6 +19,12 @@ try {
         Write-Output 'Set UNITY_EDITOR_ROOT to run it.'
     }
 
+    # The server talks to the game through the same combat core, so a rule change that breaks
+    # the payout shows up here rather than on a phone. It starts the real server on a random
+    # port and drives it over HTTP; no database or network access is needed.
+    dotnet run --project server/PetThem.ServerChecks -c Release
+    if ($LASTEXITCODE -ne 0) { throw 'Server checks failed.' }
+
     git diff --check
     if ($LASTEXITCODE -ne 0) { throw 'Whitespace check failed.' }
 } finally {
