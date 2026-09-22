@@ -18,7 +18,10 @@ public static class ServerHost
     public static WebApplication Build(string[] args, Action<IServiceCollection>? services = null)
     {
         WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
-        builder.Services.AddSingleton<IProfileStore, InMemoryProfileStore>();
+        // A file by default, so restarting the server does not cost every player their coins.
+        // Overridable so the checks can point at a database of their own.
+        builder.Services.AddSingleton<IProfileStore>(_ => new SqliteProfileStore(
+            builder.Configuration["Database"] ?? Path.Combine(AppContext.BaseDirectory, "petthem.db")));
         builder.Services.AddSingleton(LoadBalance);
         services?.Invoke(builder.Services);
 

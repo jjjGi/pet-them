@@ -20,8 +20,13 @@ using PetThem.Server;
 int passed = 0;
 var failures = new List<string>();
 
+// A database of its own, thrown away at the end. The checks run against the store the server
+// actually ships with, not a stand-in: transactions and the primary key that makes a run pay once
+// are the things worth checking, and a fake would have neither.
+string databaseFile = Path.Combine(Path.GetTempPath(), $"petthem-checks-{Guid.NewGuid():N}.db");
+
 // Quiet: a request log line per call would bury the list of checks under a few hundred lines.
-WebApplication app = ServerHost.Build([], services =>
+WebApplication app = ServerHost.Build(["--Database=" + databaseFile], services =>
     services.AddLogging(logging => logging.SetMinimumLevel(LogLevel.Warning)));
 app.Urls.Add("http://127.0.0.1:0");
 await app.StartAsync();
@@ -222,7 +227,76 @@ await Check("what the client queues is what the server accepts", async () =>
     True(!receipt.AlreadyCounted, "a first upload was treated as a repeat");
 });
 
+await Check("a profile outlives the process that wrote it", async () =>
+{
+    // The reason this store exists. Everything above would pass against a dictionary.
+    string token = await NewSession();
+    await SubmitRun(token, Run("survives-a-restart", kills: 44, seconds: 100));
+    Contracts.ProfileResponse before = await Profile(token);
+    True(before.Coins > 0, "the run paid nothing");
+
+    // A separate store over the same file, which is what a restarted server is.
+    var reopened = new SqliteProfileStore(databaseFile);
+    string? playerId = reopened.PlayerFor(token);
+    True(playerId != null, "the session did not survive");
+    PlayerProfile after = reopened.Load(playerId!);
+    True(after.coins == before.Coins, $"coins came back as {after.coins}, not {before.Coins}");
+    True(after.runsFinished == before.RunsFinished, "runsFinished did not survive");
+
+    // And the run stays counted, so a client still holding it in its outbox is not paid twice
+    // just because the server was restarted between attempts.
+    RunOutcome repeat = reopened.ApplyRun(playerId!, "survives-a-restart", 999);
+    True(repeat.AlreadyCounted, "a restarted server paid a run it had already paid");
+    True(repeat.CoinsAwarded == 0, $"a restarted server paid {repeat.CoinsAwarded} again");
+});
+await Check("the same run arriving at once is still paid once", async () =>
+{
+    // A lock made this true before. Now a primary key does, and the difference matters: the code
+    // no longer asks "has this been counted?" and then counts it, with a gap in between.
+    string token = await NewSession();
+    Contracts.RunSubmission run = Run("all-at-once", kills: 35, seconds: 80);
+
+    Contracts.RunReceipt[] receipts = await Task.WhenAll(
+        Enumerable.Range(0, 8).Select(_ => SubmitRun(token, run)));
+
+    int paid = receipts.Count(r => !r.AlreadyCounted);
+    True(paid == 1, $"{paid} of 8 simultaneous uploads were treated as the first");
+    int total = receipts.Sum(r => r.CoinsAwarded);
+    Contracts.ProfileResponse profile = await Profile(token);
+    True(profile.Coins == total, $"coins ended at {profile.Coins}, receipts totalled {total}");
+    True(profile.RunsFinished == 1, $"runsFinished ended at {profile.RunsFinished}");
+});
+await Check("a database from a newer server is refused rather than misread", async () =>
+{
+    // Running an old server against a new file would read columns it does not understand and
+    // write back whatever it made of them. Better to stop.
+    string file = Path.Combine(Path.GetTempPath(), $"petthem-future-{Guid.NewGuid():N}.db");
+    _ = new SqliteProfileStore(file);
+    using (var connection = new Microsoft.Data.Sqlite.SqliteConnection("Data Source=" + file))
+    {
+        await connection.OpenAsync();
+        using Microsoft.Data.Sqlite.SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "UPDATE schema_version SET version = $v";
+        command.Parameters.AddWithValue("$v", SqliteProfileStore.SchemaVersion + 1);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    bool refused = false;
+    try { _ = new SqliteProfileStore(file); }
+    catch (InvalidOperationException) { refused = true; }
+    True(refused, "an older server opened a database written by a newer one");
+
+    // And opening the same file twice in a row is fine, which is every restart.
+    string ordinary = Path.Combine(Path.GetTempPath(), $"petthem-twice-{Guid.NewGuid():N}.db");
+    _ = new SqliteProfileStore(ordinary);
+    _ = new SqliteProfileStore(ordinary);
+});
+
 await app.StopAsync();
+// Pooled connections keep the files open, and Windows will not delete a file that is.
+Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+foreach (string leftover in Directory.GetFiles(Path.GetTempPath(), "petthem-*.db*"))
+    try { File.Delete(leftover); } catch (IOException) { /* temp files; not worth failing over. */ }
 
 if (failures.Count > 0)
 {

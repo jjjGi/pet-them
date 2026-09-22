@@ -15,8 +15,11 @@
     -->
     <ProjectReference Include="../../tools/CombatCore/CombatCore.csproj" />
     <!-- And the same numbers, copied next to the binary so the server reads the shipped file. -->
-    <Content Include="../../game/Assets/Resources/balance-default.json"
-             Link="balance-default.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../game/Assets/Resources/balance-default.json" Link="balance-default.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
   </ItemGroup>
 
 </Project>

@@ -40,3 +40,8 @@ Thumbs.db
 # Server build output
 server/**/bin/
 server/**/obj/
+
+# Server database files
+server/**/*.db
+server/**/*.db-wal
+server/**/*.db-shm

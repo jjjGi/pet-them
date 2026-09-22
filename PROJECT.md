@@ -524,7 +524,7 @@ MCP의 서버는 반드시 클라우드 서버를 의미하지 않는다.
 - [ ] Unity가 실제로 서버를 호출하는 것을 아직 못 봤다. UnityWebRequest 경로 미실행.
 - [ ] 로컬 저장이 아직 정본이다. 서버 저장·로그인이 생겨야 권위를 넘긴다.
 - [ ] Play Games 로그인. 플러그인이 Unity 6000.3에서 되는지 미확인.
-- [ ] 저장이 메모리뿐이다. DB 구현 필요.
+- [x] 서버 저장을 SQLite로(2026-09-22). 재시작해도 프로필·세션·지급 이력이 남는다.
 - [ ] 리플레이 검증. 그 전에 IL2CPP ARM64 / .NET x64 float 결정론 측정이 먼저다.
 - [ ] 전투 난이도 조정. 봇 기준으로는 현재 설정에 위험이 없음이 측정됐다 (아래 참조).
 - [ ] 밸런스 검증 및 출시.
@@ -690,3 +690,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check.ps1
 - TravelMapValidation.Verify를 프로젝트 에디터가 닫힌 상태에서 실행. 16:9/orthographicSize=7 기준 청크 30개가 200번 이동 후에도 동일하고, 원점 재방문 장식 동일, 팔다리 좌표 변화/시간 정지 시 자세 유지 검사 통과.
 - experiments/travel-preview/map-0.png ~ map-2.png를 실제 Unity 카메라로 렌더하고 확인했다. 이는 렌더링 검증용 장면이며 실제 전투 플레이 화면이나 폰 성능 검증은 아니다.
 - scripts/check.ps1 최종 통과: 게임 63, 서버 10, 소스 컴파일 경고 0/오류 0. 실험실 회귀 14개 통과. UnityWebRequest 실연동 미검증은 유지.
+- 2026-09-22: 서버 프로필을 SQLite로 옮겼다(server/). 메모리뿐이라 재시작하면 전원 코인이 사라지던 것을 해소. IProfileStore를 트랜잭션 경계로 설계해둔 덕에 엔드포인트는 변경 없음. 멱등성은 counted_runs 기본 키로 고정하되, 트랜잭션 직렬화와 둘 다 지키고 있어 어느 쪽이 버티는지는 갈리지 않았다고 기록. 요청마다 연결을 열고 쓰기는 BEGIN IMMEDIATE(잠금 승격 교착 회피). 서버 검사 10 → 13(재시작 후 잔존·8개 동시 업로드·신버전 DB 거부). InMemoryProfileStore 삭제. 전투 코어 변경 없음, 게임 검사 63개 유지.
