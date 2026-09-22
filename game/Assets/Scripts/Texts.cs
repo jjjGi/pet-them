@@ -54,7 +54,7 @@ namespace PetThem.Game
         /// The one place the build number lives. The editor stamps the Android package with it and
         /// the menu prints it, so the version on the phone and the version on screen cannot drift.
         /// </summary>
-        public const string Version = "0.18.0";
+        public const string Version = "0.18.1";
         public static string MapPicker => Pick("탐험할 맵 · 끝없이 이동", "Explore · keep moving");
         public static string MapName(int theme) => theme == 1 ? Pick("모래 정원", "Dunes") :
             theme == 2 ? Pick("눈꽃 들판", "Snowfield") : Pick("초록 숲", "Woodland");
@@ -418,6 +418,18 @@ namespace PetThem.Game
         public static string ServerAddress =>
             Pick("서버 주소  /  비워두면 보내지 않습니다", "Server address  /  empty means send nowhere");
         public static string ServerApply => Pick("적용", "APPLY");
+
+        /// <summary>
+        /// Shown in place of the interface when drawing it threw.
+        /// </summary>
+        /// <remarks>
+        /// Deliberately asks for the photograph. Whoever is holding the phone is the only one who
+        /// can see this, and the message underneath is the whole diagnosis.
+        /// </remarks>
+        public static string ScreenBroke(string version) =>
+            Pick($"화면을 그리다 문제가 생겼습니다 (버전 {version}).\n이 글자를 찍어서 보내 주세요. 게임은 계속 돌고 있습니다.",
+                $"Something went wrong drawing the screen (version {version}).\nPlease photograph this. The game itself is still running.");
+        public static string ScreenRetry => Pick("다시 그려보기", "TRY DRAWING AGAIN");
 
         // How the last upload went. A queue that does not move and says nothing is the worst of
         // both: something is wrong and nobody has been told what.

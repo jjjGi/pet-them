@@ -89,6 +89,8 @@ namespace PetThem.Game
         private string recordingPath = "", recordingError = "", runId = "";
         private GUIStyle title, heading, body, small, button, menuTitle, menuHeading, menuButton, diagnostic, coaching;
         private GUIStyle homeTitle, bigButton, tabButton, tabButtonOn, field;
+        private bool stylesReady;
+        private string screenError = "";
         private string serverDraft;
         private string fontReport = "";
         private bool koreanUnavailable;
@@ -743,9 +745,20 @@ namespace PetThem.Game
         /// covers Windows, macOS and Android without shipping a font file we would have to license.
         /// If none of them exist the built-in font is kept, and the game is readable in English.
         /// </remarks>
+        /// <summary>
+        /// Builds every style, or none.
+        /// </summary>
+        /// <remarks>
+        /// The flag is set at the end rather than inferred from one of the styles being non-null.
+        /// It used to check <c>body</c>, which is built third: anything after it throwing once
+        /// left the later styles null forever, because every following frame took the early
+        /// return and never got back to them. Drawing with a null style throws, so a single
+        /// failure here turned into an interface that never appeared again -- no menu, no buttons,
+        /// nothing to press, and the game still running underneath.
+        /// </remarks>
         private void InitStyles()
         {
-            if (body != null) return;
+            if (stylesReady) return;
             Font glyphs = ResolveFont();
 
             title = new GUIStyle(GUI.skin.label) { fontSize = 56, fontStyle = FontStyle.Bold };
@@ -778,6 +791,7 @@ namespace PetThem.Game
             // the only thing on screen that can say so.
             diagnostic = new GUIStyle(GUI.skin.label) { fontSize = 14, wordWrap = true };
             diagnostic.normal.textColor = new Color(1, 1, 1, .5f);
+            stylesReady = true;
         }
 
         /// <summary>
@@ -873,7 +887,54 @@ namespace PetThem.Game
         }
         private void Panel(Rect rect, Color color)
         { Color previous = GUI.color; GUI.color = color; GUI.DrawTexture(rect, Texture2D.whiteTexture); GUI.color = previous; }
+        /// <summary>
+        /// Draws the interface, or says why it could not.
+        /// </summary>
+        /// <remarks>
+        /// A blank screen is the worst failure this game can have: the world carries on rendering
+        /// underneath, nothing responds, and the person holding the phone has no way to tell an
+        /// unresponsive game from a broken one. Whatever goes wrong in here gets written on the
+        /// screen instead, in the built-in font and without any of the styles below -- because the
+        /// styles are one of the things that can be broken.
+        ///
+        /// The first failure is kept and shown rather than retried every frame, so the message
+        /// stays still long enough to read and photograph.
+        /// </remarks>
         private void OnGUI()
+        {
+            if (screenError.Length > 0) { DrawScreenFailure(); return; }
+            try { DrawScreen(); }
+            catch (Exception ex)
+            {
+                screenError = ex.GetType().Name + ": " + ex.Message + "\n\n" +
+                    FirstFrames(ex.StackTrace);
+                Debug.LogException(ex);
+            }
+        }
+
+        /// <summary>The top few stack frames, which is what names the line that broke.</summary>
+        private static string FirstFrames(string stack)
+        {
+            if (string.IsNullOrEmpty(stack)) return "(no stack trace)";
+            string[] lines = stack.Split('\n');
+            return string.Join("\n", lines, 0, Math.Min(6, lines.Length));
+        }
+
+        /// <summary>
+        /// The screen of last resort. Uses no field of this class that could be null.
+        /// </summary>
+        private void DrawScreenFailure()
+        {
+            GUI.matrix = Matrix4x4.identity;
+            GUI.color = Color.white;
+            Panel(new Rect(0,0,Screen.width,Screen.height), new Color(.09f,.03f,.04f,1));
+            GUI.Label(new Rect(24,24,Screen.width-48,Screen.height-140),
+                Texts.ScreenBroke(Texts.Version) + "\n\n" + screenError);
+            if (GUI.Button(new Rect(24,Screen.height-96,320,64), Texts.ScreenRetry))
+            { screenError = ""; stylesReady = false; }
+        }
+
+        private void DrawScreen()
         {
             InitStyles();
             float scale = Screen.height / 720f;
