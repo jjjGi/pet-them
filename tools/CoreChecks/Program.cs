@@ -238,10 +238,15 @@ Check("growth modifies this run only and health upgrades respect maximum health"
     }
     // Applied directly: whether Vitality is ever offered depends on the draw, and the point here
     // is what it does to maximum health, not how often it comes up.
+    //
+    // Measured against the rank it already had rather than against two. The comment above always
+    // said the draw decides whether it comes up, and the assertion then assumed it had not --
+    // so adding one card to the pool moved the deal and broke a check about something else.
+    int vitality = world.UpgradeRank(UpgradeId.Vitality);
     True(world.Apply(UpgradeId.Vitality));
     True(world.Apply(UpgradeId.Vitality));
     True(world.Health <= world.MaxHealth);
-    True(world.UpgradeRank(UpgradeId.Vitality) == 2);
+    True(world.UpgradeRank(UpgradeId.Vitality) == vitality + 2);
     Near(world.MaxHealth, config.playerHealth * (1 + .2f * world.UpgradeRank(UpgradeId.Vitality)));
     Near(config.playerHealth, 100); Near(config.petDamage, 1000);
     world.Abandon();
@@ -1227,6 +1232,14 @@ Check("every id the player can see is translated in every language", () =>
             }
         }
         True(!string.IsNullOrWhiteSpace(Texts.CoachReplay));
+        // Every rank has a band, and the last one has its own word.
+        for (int rank = 1; rank <= 5; rank++)
+        {
+            True(!string.IsNullOrWhiteSpace(Texts.RankTier(rank)));
+            True(Texts.RankTier(rank) != Texts.RankMax);
+        }
+        True(Texts.Reroll(2) != Texts.Reroll(0));
+        True(!string.IsNullOrWhiteSpace(Texts.Reroll(0)));
         // Every section of the home screen needs a name in every language: an untranslated tab
         // falls through to the raw enum name and the bar reads half in English.
         foreach (HomeTab tab in Enum.GetValues(typeof(HomeTab)))
@@ -1589,6 +1602,146 @@ Check("the source check references exactly the engine modules the project enable
     // was the missing one: the reference used to be a wildcard over the whole folder.
     foreach (string module in referenced)
         True(enabled.Contains(module) || Array.IndexOf(alwaysPresent, module) >= 0);
+});
+Check("being hit shoves the crowd away, and only when repel was taken", () =>
+{
+    // Surrounded on purpose: a tight ring is the shape most deaths have, and the one this card
+    // is for.
+    CombatWorld Ringed(bool withRepel)
+    {
+        var config = new BalanceConfig { bossSpawnTime = 1000, spawnInterval = .02f,
+            minSpawnInterval = .02f, petRange = .001f, punchDamage = .001f, playerHealth = 100000 };
+        var world = new CombatWorld(config, 11, true);
+        if (withRepel) True(world.Apply(UpgradeId.Repel));
+        for (int i = 0; i < 600; i++) world.Step(default);
+        return world;
+    }
+
+    var plain = Ringed(false);
+    var shoved = Ringed(true);
+    True(plain.Enemies.Count > 0);
+    True(shoved.Enemies.Count > 0);
+
+    // Standing still and being hit, the repelled run should be holding the crowd further out.
+    True(Spread(shoved) > Spread(plain));
+
+    // It pushes rather than kills: the card is about space, and thorns is the one about trade.
+    var counted = new CombatWorld(new BalanceConfig { bossSpawnTime = 1000, spawnInterval = .02f,
+        minSpawnInterval = .02f, petRange = .001f, punchDamage = .001f, playerHealth = 100000 }, 11, true);
+    True(counted.Apply(UpgradeId.Repel));
+    for (int i = 0; i < 600; i++) counted.Step(default);
+    True(counted.Kills == 0);
+
+    // Every shove is announced, so the screen can show it and the log can count it.
+    bool announced = false;
+    var watched = new CombatWorld(new BalanceConfig { bossSpawnTime = 1000, spawnInterval = .02f,
+        minSpawnInterval = .02f, petRange = .001f, punchDamage = .001f, playerHealth = 100000 }, 11, true);
+    True(watched.Apply(UpgradeId.Repel));
+    for (int i = 0; i < 600 && !announced; i++)
+    {
+        watched.Step(default);
+        foreach (CombatEvent e in watched.Events)
+            if (e.type == "attack" && e.source == "repel") announced = true;
+    }
+    True(announced);
+});
+Check("a re-roll deals new cards, costs one from the run's budget, and runs out", () =>
+{
+    var config = new BalanceConfig { petRange = 100, petDamage = 1000, petCooldown = .01f,
+        spawnInterval = .01f, minSpawnInterval = .01f };
+    var world = new CombatWorld(config, 77, true);
+    True(world.RerollsLeft == config.rerollsPerRun);
+
+    // Nothing to re-roll before there are cards on the table.
+    True(!world.RerollUpgrades());
+    UntilChoice(world);
+
+    var first = new List<UpgradeId>();
+    foreach (UpgradeChoice choice in world.UpgradeChoices) first.Add(choice.Id);
+    True(first.Count == 3);
+
+    True(world.RerollUpgrades());
+    True(world.RerollsLeft == config.rerollsPerRun - 1);
+    True(world.UpgradeChoices.Count == 3);
+    // The whole point: a hand that was not worth taking is replaced.
+    bool moved = false;
+    for (int i = 0; i < 3; i++) if (world.UpgradeChoices[i].Id != first[i]) moved = true;
+    True(moved);
+
+    // It costs no experience and no level -- combat is already stopped while the cards are up.
+    True(world.Level == 1);
+
+    while (world.RerollsLeft > 0) True(world.RerollUpgrades());
+    True(!world.RerollUpgrades());
+    // And the cards left on the table are still takeable after the budget is gone.
+    True(world.ChooseUpgrade(world.UpgradeChoices[0].Id));
+
+    // A fresh run gets its budget back.
+    var second = new CombatWorld(config, 77, true);
+    True(second.RerollsLeft == config.rerollsPerRun);
+});
+Check("re-rolling does not disturb the spawns or the boss", () =>
+{
+    // The separate random streams exist so that pressing a button cannot change the fight. A
+    // re-roll draws from the progression stream, so the world outside the cards must not move.
+    string Run(int rerolls)
+    {
+        var config = new BalanceConfig { bossSpawnTime = 6, spawnInterval = .05f, minSpawnInterval = .05f };
+        var world = new CombatWorld(config, 2024, true);
+        var transcript = new System.Text.StringBuilder();
+        for (int tick = 0; tick < 900; tick++)
+        {
+            world.Step(default);
+            foreach (CombatEvent e in world.Events)
+                // Cards are expected to differ; everything else is not.
+                if (e.type == "spawn" || e.type == "boss_spawn" || e.type == "boss_telegraph")
+                    transcript.Append(e.tick).Append(e.type).Append(e.source).Append(';');
+            if (world.HasUpgradeChoice)
+            {
+                for (int i = 0; i < rerolls && world.RerollsLeft > 0; i++) world.RerollUpgrades();
+                world.ChooseUpgrade(world.UpgradeChoices[0].Id);
+            }
+        }
+        return transcript.ToString();
+    }
+
+    True(Run(0).Length > 0);
+    True(Run(0) == Run(0));
+    // Not equal to Run(0) would mean a button press moved the enemies.
+    True(Run(2) == Run(0));
+});
+Check("a granted re-roll adds to the budget and a finished run grants none", () =>
+{
+    var world = new CombatWorld(new BalanceConfig(), 5, true);
+    int before = world.RerollsLeft;
+    True(world.GrantReroll());
+    True(world.RerollsLeft == before + 1);
+    world.Abandon();
+    True(!world.GrantReroll());
+    True(!world.RerollUpgrades());
+});
+Check("a card at its last rank can be recognised before it is taken", () =>
+{
+    // The screen marks these, because that is the one time a choice is worth making for the rank
+    // rather than for what it does.
+    // The fast config, or levelling takes longer than the helper waits.
+    var world = new CombatWorld(new BalanceConfig { playerHealth = 100000, petDamage = 1000,
+        petRange = 100, petCooldown = .01f, spawnInterval = .01f, minSpawnInterval = .01f }, 3, true);
+    True(!world.IsAtCap(UpgradeId.Thorns));
+    for (int i = 0; i < 5; i++) True(world.Apply(UpgradeId.Thorns));
+    True(world.IsAtCap(UpgradeId.Thorns));
+
+    // Uncapped upgrades never report as finished, however many times they are taken.
+    for (int i = 0; i < 6; i++) True(world.Apply(UpgradeId.PunchPower));
+    True(!world.IsAtCap(UpgradeId.PunchPower));
+
+    // And a capped one stops being offered once it is there.
+    for (int level = 0; level < 40 && world.Level < CombatWorld.MaxLevel; level++)
+    {
+        UntilChoice(world);
+        foreach (UpgradeChoice choice in world.UpgradeChoices) True(!world.IsAtCap(choice.Id));
+        world.ChooseUpgrade(world.UpgradeChoices[0].Id);
+    }
 });
 Console.WriteLine(passed + " checks passed.");
 return;

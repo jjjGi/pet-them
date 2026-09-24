@@ -38,6 +38,8 @@ namespace PetThem.Game
         private Vector2 moveAnchor, attackAnchor, movePoint, attackPoint;
         private float drawAmount;
         private float accumulator, hurtFlash;
+        /// <summary>When the camera stops shaking, and the size of the kick it started with.</summary>
+        private float shakeUntil, shakeForce;
         private GameAudio gameAudio;
         private ServerLink link;
         private Coach coach;
@@ -218,6 +220,7 @@ namespace PetThem.Game
                 gameCamera.transform.position = new Vector3(world.Position.x, world.Position.y, -10);
                 travelMap.Follow(gameCamera, mapTheme);
             }
+            ShakeCamera();
             // The sprite carries its own colour, so this tints rather than replaces it.
             player.GetComponent<SpriteRenderer>().color = Time.unscaledTime < hurtFlash ? coral : Color.white;
             SynchronizeEnemies();
@@ -230,6 +233,24 @@ namespace PetThem.Game
             for (int i = transient.Count - 1; i >= 0; i--)
                 if (Time.unscaledTime >= transientEnds[i])
                 { Destroy(transient[i]); transient.RemoveAt(i); transientEnds.RemoveAt(i); }
+        }
+
+        /// <summary>
+        /// Kicks the camera for a moment after a hit, fading as it goes.
+        /// </summary>
+        /// <remarks>
+        /// Applied after the camera has been placed for the frame rather than added to its
+        /// position, so it never accumulates into a drift. Small on purpose: enough to feel, not
+        /// enough to lose track of where the crowd is, because losing track is how the next hit
+        /// lands.
+        /// </remarks>
+        private void ShakeCamera()
+        {
+            float left = shakeUntil - Time.unscaledTime;
+            if (left <= 0) return;
+            float fade = Mathf.Clamp01(left / .22f) * shakeForce;
+            float t = Time.unscaledTime * 47;
+            gameCamera.transform.position += new Vector3(Mathf.Sin(t) * fade, Mathf.Cos(t * 1.37f) * fade, 0);
         }
 
         private void ReadInput()
@@ -681,7 +702,27 @@ namespace PetThem.Game
             if (e.type == "hurt") gameAudio.Sound("hurt");
             if (e.type == "boss_telegraph") gameAudio.Sound("boss");
             if (e.type == "attack") gameAudio.Sound(e.source);
-            if (e.type == "hurt") hurtFlash = Time.unscaledTime + .15f;
+            if (e.type == "hurt")
+            {
+                // Long enough to register as a hit rather than a flicker. Being hit is the only
+                // thing in this game that loses you the run, and it used to be a tint you could
+                // miss while looking at the crowd.
+                hurtFlash = Time.unscaledTime + .28f;
+                shakeUntil = Time.unscaledTime + .22f;
+                shakeForce = Mathf.Min(.42f, .12f + e.value * .012f);
+            }
+            if (e.type == "attack" && e.source == "repel")
+            {
+                var wave = new GameObject("Repel");
+                wave.transform.SetParent(transform);
+                wave.transform.position = new Vector3(e.x, e.y, 0);
+                wave.transform.localScale = Vector3.one * (world.GetConfig().repelRadius / .4f * 2);
+                var wr = wave.AddComponent<SpriteRenderer>();
+                wr.sprite = Art.Ring;
+                wr.color = new Color(1, 1, 1, .55f);
+                wr.sortingOrder = 8;
+                transient.Add(wave); transientEnds.Add(Time.unscaledTime + .22f);
+            }
             if (e.type == "heal")
             {
                 var ring = new GameObject("Heal");
@@ -1005,6 +1046,7 @@ namespace PetThem.Game
                     GUI.color = Color.white;
                 }
                 if (weapon == WeaponId.Arrow && holdAttack) DrawBowGauge(scale);
+                DrawHurtEdge(width);
                 DrawCoaching(width);
             }
             if (started && !paused && world.State == RunState.Playing && world.HasUpgradeChoice)
@@ -1013,6 +1055,27 @@ namespace PetThem.Game
             if (world.State != RunState.Playing) { DrawResult(width); return; }
             if (paused) DrawPause(width);
         }
+        /// <summary>
+        /// A red frame around the screen for a moment after a hit.
+        /// </summary>
+        /// <remarks>
+        /// Around the edge rather than over the middle, because the middle is where the player is
+        /// looking and covering it while they are being hit is the opposite of helping. It fades
+        /// out, so a run where health is draining flickers rather than going solid red.
+        /// </remarks>
+        private void DrawHurtEdge(float width)
+        {
+            float left = hurtFlash - Time.unscaledTime;
+            if (left <= 0) return;
+            float fade = Mathf.Clamp01(left / .28f) * .55f;
+            var edge = new Color(coral.r, coral.g, coral.b, fade);
+            const float thickness = 26;
+            Panel(new Rect(0,0,width,thickness),edge);
+            Panel(new Rect(0,720-thickness,width,thickness),edge);
+            Panel(new Rect(0,0,thickness,720),edge);
+            Panel(new Rect(width-thickness,0,thickness,720),edge);
+        }
+
         /// <summary>
         /// One line of coaching over the arena, for as long as the lesson behind it is unlearned.
         /// </summary>
@@ -1392,23 +1455,79 @@ namespace PetThem.Game
                 UpgradeChoice choice = world.UpgradeChoices[i];
                 UpgradeKind kind = CombatWorld.KindOf(choice.Id);
                 Color accent = KindColor(kind);
+                Color tier = RankColor(choice.Rank);
+                bool caps = CombatWorld.IsRankCapped(choice.Id) && choice.Rank >= 5;
                 float x = left + i * (cardWidth + gap);
 
+                // The frame says how far this card goes, before any of it has been read. It
+                // thickens with the rank, so the best card in a hand is the one that looks
+                // heaviest rather than the one you worked out.
+                float edge = 2 + choice.Rank;
+                Panel(new Rect(x-edge,260-edge,cardWidth+edge*2,310+edge*2),tier);
                 Panel(new Rect(x,260,cardWidth,310),new Color32(34,57,65,255));
-                // A colour strip down the side, so the three cards read as three kinds of choice
-                // before any of the text has been read.
+                // And the strip down the side still says which kind of choice it is. Two
+                // different questions, two different marks.
                 Panel(new Rect(x,260,6,310),accent);
 
                 Color previous = GUI.color;
                 GUI.color = accent;
-                GUI.Label(new Rect(x+20,278,cardWidth-36,30),
+                GUI.Label(new Rect(x+20,278,cardWidth-120,30),
                     Texts.UpgradeKindName(kind) + "   " + Texts.RankDots(choice.Rank),small);
+                GUI.color = caps ? tier : new Color(tier.r,tier.g,tier.b,.75f);
+                GUI.Label(new Rect(x+cardWidth-108,278,88,30),
+                    caps ? Texts.RankMax : Texts.RankTier(choice.Rank),small);
                 GUI.color = previous;
 
                 GUI.Label(new Rect(x+20,320,cardWidth-36,66),Texts.UpgradeTitle(choice.Id),heading);
                 GUI.Label(new Rect(x+20,386,cardWidth-36,120),Texts.UpgradeDescription(choice.Id),body);
                 if (GUI.Button(new Rect(x+20,508,cardWidth-40,46),Texts.PickOption(i+1),button))
                 { SelectUpgrade(i); break; }
+            }
+            DrawRerollButton(width);
+        }
+
+        /// <summary>
+        /// The button for a hand that is not worth taking.
+        /// </summary>
+        /// <remarks>
+        /// Greyed rather than hidden when the budget is gone: a control that vanishes teaches
+        /// nobody that it existed, and the count is the thing worth knowing before spending one.
+        ///
+        /// The intended way to earn more is a rewarded advert, and there is no advert. The core
+        /// has GrantReroll waiting for whatever ends up earning one; nothing calls it yet, and
+        /// this button does not pretend otherwise.
+        /// </remarks>
+        private void DrawRerollButton(float width)
+        {
+            bool spare = world.RerollsLeft > 0;
+            var box = new Rect(width/2-170,596,340,52);
+            Color previous = GUI.color;
+            GUI.color = spare ? paper : new Color(1,1,1,.35f);
+            if (GUI.Button(box,Texts.Reroll(world.RerollsLeft),button) && spare && world.RerollUpgrades())
+            {
+                gameAudio.Sound("upgrade");
+                RecordEvents(); FlushRecording();
+            }
+            GUI.color = previous;
+        }
+
+        /// <summary>
+        /// The colour of a rank, from the first one to the last.
+        /// </summary>
+        /// <remarks>
+        /// Five steps rather than a gradient, so two cards a rank apart are told apart at a glance
+        /// on a phone that is moving. The order runs cool to hot, which is the order every game
+        /// that does this uses, and borrowing it means nobody has to learn ours.
+        /// </remarks>
+        private static Color RankColor(int rank)
+        {
+            switch (rank)
+            {
+                case 1: return new Color32(122, 198, 138, 255);
+                case 2: return new Color32(96, 176, 255, 255);
+                case 3: return new Color32(186, 132, 255, 255);
+                case 4: return new Color32(255, 176, 88, 255);
+                default: return new Color32(255, 112, 176, 255);
             }
         }
         private static Color KindColor(UpgradeKind kind)

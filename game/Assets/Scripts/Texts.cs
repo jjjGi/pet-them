@@ -54,7 +54,7 @@ namespace PetThem.Game
         /// The one place the build number lives. The editor stamps the Android package with it and
         /// the menu prints it, so the version on the phone and the version on screen cannot drift.
         /// </summary>
-        public const string Version = "0.18.1";
+        public const string Version = "0.19.0";
         public static string MapPicker => Pick("탐험할 맵 · 끝없이 이동", "Explore · keep moving");
         public static string MapName(int theme) => theme == 1 ? Pick("모래 정원", "Dunes") :
             theme == 2 ? Pick("눈꽃 들판", "Snowfield") : Pick("초록 숲", "Woodland");
@@ -178,6 +178,7 @@ namespace PetThem.Game
                 case UpgradeId.Blast: return Pick("펑 터짐", "GOES POP");
                 case UpgradeId.Lifesteal: return Pick("한 입 보충", "QUICK SNACK");
                 case UpgradeId.Thorns: return Pick("따끔한 털", "PRICKLY COAT");
+                case UpgradeId.Repel: return Pick("밀어내는 숨", "SHOCKWAVE");
                 case UpgradeId.Regen: return Pick("스르르 회복", "SLOW MEND");
                 case UpgradeId.Greed: return Pick("동전 욕심", "COIN GREED");
                 default: return id.ToString();
@@ -248,6 +249,9 @@ namespace PetThem.Game
                 case UpgradeId.Thorns:
                     return Pick("당신을 건드린 적이\n대신 아파합니다.\n최대 5단계.",
                         "Whatever touches you\ngets hurt for trying.\nUp to 5 ranks.");
+                case UpgradeId.Repel:
+                    return Pick("맞는 순간 주변 적을\n밀쳐냅니다. 피해는 없습니다.\n최대 5단계.",
+                        "Being hit shoves the crowd\noff you. No damage.\nUp to 5 ranks.");
                 case UpgradeId.Regen:
                     return Pick("가만히 있어도\n체력이 천천히 찹니다.\n최대 5단계.",
                         "Health creeps back up\non its own.\nUp to 5 ranks.");
@@ -418,6 +422,26 @@ namespace PetThem.Game
         public static string ServerAddress =>
             Pick("서버 주소  /  비워두면 보내지 않습니다", "Server address  /  empty means send nowhere");
         public static string ServerApply => Pick("적용", "APPLY");
+
+        /// <summary>The rank band on a card. Cool to hot, the order these things are always in.</summary>
+        public static string RankTier(int rank)
+        {
+            switch (rank)
+            {
+                case 1: return Pick("보통", "COMMON");
+                case 2: return Pick("좋음", "FINE");
+                case 3: return Pick("희귀", "RARE");
+                case 4: return Pick("영웅", "EPIC");
+                default: return Pick("전설", "LEGEND");
+            }
+        }
+
+        /// <summary>Shown instead of the band when taking this card finishes it.</summary>
+        public static string RankMax => Pick("최대", "MAX");
+
+        public static string Reroll(int left) =>
+            left > 0 ? Pick($"다시 돌리기  ({left})", $"RE-ROLL  ({left})")
+                     : Pick("다시 돌리기 없음", "NO RE-ROLLS LEFT");
 
         /// <summary>
         /// Shown in place of the interface when drawing it threw.

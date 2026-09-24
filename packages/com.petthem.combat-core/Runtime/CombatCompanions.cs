@@ -47,6 +47,7 @@ namespace PetThem.Combat
         private readonly List<Enemy> orbScan = new List<Enemy>();
         private readonly List<Enemy> blastScan = new List<Enemy>();
         private readonly List<Enemy> contactScan = new List<Enemy>();
+        private readonly List<Enemy> repelScan = new List<Enemy>();
 
         /// <summary>
         /// Fills a buffer with the enemies to walk while dealing damage.
@@ -226,6 +227,38 @@ namespace PetThem.Combat
                     Damage(enemy, damage, "blast");
             }
             resolvingBlast = false;
+        }
+
+        /// <summary>
+        /// Shoves the crowd off the player when they are hit, if repel was taken.
+        /// </summary>
+        /// <remarks>
+        /// Deaths here almost always look the same: surrounded, hit, hit again before there is
+        /// anywhere to go. This buys that half-second back. It deals no damage on purpose -- the
+        /// thorns card already does that, and this one is about space rather than trade.
+        ///
+        /// The boss is not shoved. Its moves are wound up and aimed in advance, and pushing it out
+        /// of its own charge would make the telegraph a lie.
+        ///
+        /// Its own buffer, like every other scan: this runs inside the contact loop, which is
+        /// walking a buffer of its own.
+        /// </remarks>
+        private void ApplyRepel()
+        {
+            int rank = UpgradeRank(UpgradeId.Repel);
+            if (rank == 0) return;
+            float push = config.repelForce * rank;
+            Emit("attack", "repel", 0, push, Position);
+            foreach (Enemy enemy in ScanEnemies(repelScan))
+            {
+                if (enemy == Boss || enemy.Health <= 0) continue;
+                Vec2 delta = enemy.Position - Position;
+                if (delta.Length > config.repelRadius) continue;
+                // Straight up when something is standing exactly on you, rather than dividing by
+                // a length of zero and sending it to nowhere.
+                Vec2 away = delta.Length > 0.0001f ? delta.Normalized : new Vec2(0, 1);
+                enemy.Position = Clamp(enemy.Position + away * push, enemy.Radius);
+            }
         }
 
         /// <summary>Hurts whatever just touched the player, if thorns were taken.</summary>

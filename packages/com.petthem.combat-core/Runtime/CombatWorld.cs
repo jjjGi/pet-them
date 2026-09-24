@@ -81,6 +81,11 @@ namespace PetThem.Combat
         public float blastDamage = 18, blastRadius = 2.2f;
         public float lifestealPerKill = 0.6f, thornsDamage = 12, regenPerSecond = 0.8f;
         public float greedBonus = 0.5f;
+        // Repel: being hit shoves the crowd off you. The answer to being surrounded, which is the
+        // shape most deaths have.
+        public float repelRadius = 3.4f, repelForce = 2.6f;
+        // Re-rolls of the level-up cards, per run. Spent by choice, so nought is a valid setting.
+        public int rerollsPerRun = 2;
 
         public BalanceConfig Copy() => (BalanceConfig)MemberwiseClone();
         public void Validate()
@@ -111,7 +116,7 @@ namespace PetThem.Combat
             foreach (float value in new[] { droneInterval, droneShare, droneRange, droneOrbit,
                 orbitRadius, orbitSpeed, orbitDamage, orbitHitRadius, orbitRecovery,
                 critMultiplier, blastDamage, blastRadius, lifestealPerKill, thornsDamage,
-                regenPerSecond, greedBonus })
+                regenPerSecond, greedBonus, repelRadius, repelForce })
                 if (!Vec2.Finite(value) || value <= 0)
                     throw new ArgumentException("Upgrade effect values must be finite and positive.");
             if (!Vec2.Finite(critChance) || critChance <= 0 || critChance > 1)
@@ -137,6 +142,10 @@ namespace PetThem.Combat
                 arenaHalfWidth <= 1 || arenaHalfHeight <= 1 || string.IsNullOrWhiteSpace(version))
                 throw new ArgumentException("Invalid limits or version.");
             if (arrowPierce < 1 || arrowPierce > 20) throw new ArgumentException("arrowPierce must be between 1 and 20.");
+            // Not in the list above: a run with no re-rolls is a legitimate setting, and the list
+            // there insists on values above zero.
+            if (rerollsPerRun < 0 || rerollsPerRun > 20)
+                throw new ArgumentException("rerollsPerRun must be between 0 and 20.");
             if (!Vec2.Finite(arrowMinDraw) || arrowMinDraw < 0 || arrowMinDraw >= 1)
                 throw new ArgumentException("arrowMinDraw must be at least 0 and below 1.");
             if (!Vec2.Finite(arrowMinPower) || arrowMinPower <= 0 || arrowMinPower > 1)
@@ -258,6 +267,7 @@ namespace PetThem.Combat
             random = unchecked((uint)seed);
             if (random == 0) random = 0x9e3779b9;
             Health = config.playerHealth;
+            RerollsLeft = twisted.rerollsPerRun;
             enemyView = enemies.AsReadOnly();
             eventView = events.AsReadOnly();
         }
@@ -324,6 +334,7 @@ namespace PetThem.Combat
                     Emit("hurt", enemy.Kind.ToString(), enemy.Id, actual, Position);
                     if (Health <= 0) { State = RunState.Lost; Emit("run_end", "death", enemy.Id, Kills); break; }
                     ApplyThorns(enemy);
+                    ApplyRepel();
                 }
             }
             if (State == RunState.Playing && Tick >= Frames(config.duration))

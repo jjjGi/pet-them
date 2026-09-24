@@ -31,7 +31,7 @@ namespace PetThem.Combat
         // Things that fight with you.
         Drone, Orbit,
         // Things that go off on an event.
-        Crit, Blast, Lifesteal, Thorns,
+        Crit, Blast, Lifesteal, Thorns, Repel,
         // Everything else.
         Regen, Greed,
     }
@@ -68,6 +68,16 @@ namespace PetThem.Combat
         public float PunchRange => config.punchRange;
         public int UpgradeRank(UpgradeId id) => upgradeRanks.TryGetValue(id, out int rank) ? rank : 0;
 
+        /// <summary>Re-rolls the player still has this run.</summary>
+        public int RerollsLeft { get; private set; }
+
+        /// <summary>True when this upgrade cannot be taken any further.</summary>
+        /// <remarks>
+        /// The screen reads this to mark a card as the last of its kind, which is the one time a
+        /// choice is worth making for the rank rather than for the effect.
+        /// </remarks>
+        public bool IsAtCap(UpgradeId id) => IsRankCapped(id) && UpgradeRank(id) >= 5;
+
         /// <summary>Weapon upgrades belong to the weapon this run started with; the rest are shared.</summary>
         public bool AppliesToWeapon(UpgradeId id)
         {
@@ -94,7 +104,8 @@ namespace PetThem.Combat
             id == UpgradeId.PetReach || id == UpgradeId.PetChill || id == UpgradeId.PetGuard ||
             id == UpgradeId.Drone || id == UpgradeId.Orbit ||
             id == UpgradeId.Crit || id == UpgradeId.Blast || id == UpgradeId.Lifesteal ||
-            id == UpgradeId.Thorns || id == UpgradeId.Regen || id == UpgradeId.Greed;
+            id == UpgradeId.Thorns || id == UpgradeId.Repel ||
+            id == UpgradeId.Regen || id == UpgradeId.Greed;
 
         /// <summary>
         /// Which family a card belongs to. The level-up screen groups by this, so a hand of three
@@ -123,7 +134,8 @@ namespace PetThem.Combat
                 case UpgradeId.Crit:
                 case UpgradeId.Blast:
                 case UpgradeId.Lifesteal:
-                case UpgradeId.Thorns: return UpgradeKind.Trigger;
+                case UpgradeId.Thorns:
+                case UpgradeId.Repel: return UpgradeKind.Trigger;
 
                 default: return UpgradeKind.Body;
             }
@@ -153,6 +165,50 @@ namespace PetThem.Combat
         {
             if (!ProgressionEnabled || State != RunState.Playing || HasUpgradeChoice || Level >= MaxLevel ||
                 Experience < ExperienceToNextLevel) return;
+            OfferUpgradeChoices();
+        }
+
+        /// <summary>
+        /// Throws this level's three cards away and deals three more.
+        /// </summary>
+        /// <remarks>
+        /// Costs a re-roll from a budget the run starts with, and nothing else: no experience, no
+        /// level, no time -- combat is already stopped while the cards are up. A player who is
+        /// offered three cards for a build they are not playing has been handed a wasted level,
+        /// and that is a bad feeling to have designed in on purpose.
+        ///
+        /// It draws from the same stream the first deal used, because a re-roll is an upgrade roll.
+        /// Giving it a stream of its own would make the spawns and the boss depend on whether
+        /// somebody pressed a button, which is exactly what the separate streams exist to prevent.
+        /// </remarks>
+        public bool RerollUpgrades()
+        {
+            if (State != RunState.Playing || !HasUpgradeChoice || RerollsLeft <= 0) return false;
+            events.Clear();
+            RerollsLeft--;
+            upgradeChoices.Clear();
+            Emit("reroll", "player", 0, RerollsLeft);
+            OfferUpgradeChoices();
+            return true;
+        }
+
+        /// <summary>
+        /// Adds a re-roll mid-run, for whatever the game decides is worth one.
+        /// </summary>
+        /// <remarks>
+        /// Separate from the run's budget so the rule stays here rather than in the screen: the
+        /// core owns how many re-rolls exist, and the caller owns what earns one. Nothing calls
+        /// this yet; a rewarded advert is the intended earner and no advert exists.
+        /// </remarks>
+        public bool GrantReroll()
+        {
+            if (State != RunState.Playing) return false;
+            RerollsLeft++;
+            return true;
+        }
+
+        private void OfferUpgradeChoices()
+        {
             var pool = new List<UpgradeId>();
             foreach (UpgradeId id in Enum.GetValues(typeof(UpgradeId)))
             {
@@ -197,6 +253,9 @@ namespace PetThem.Combat
             upgradeRanks[id] = UpgradeRank(id) + 1;
             switch (id)
             {
+                // Repel and the other event effects read their own rank where they fire, so
+                // taking one changes nothing here.
+                case UpgradeId.Repel: break;
                 case UpgradeId.PunchPower: config.punchDamage += baseConfig.punchDamage * .2f; break;
                 case UpgradeId.PunchReach: config.punchRange += baseConfig.punchRange * .1f; break;
                 case UpgradeId.ArrowPower: config.arrowDamage += baseConfig.arrowDamage * .22f; break;

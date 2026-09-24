@@ -1,5 +1,5 @@
 {
-  "version": "prototype-0.4-endless",
+  "version": "prototype-0.5-repel",
   "endlessWorld": true,
   "duration": 180,
   "arenaHalfWidth": 14,
@@ -86,5 +86,8 @@
   "lifestealPerKill": 0.6,
   "thornsDamage": 12,
   "regenPerSecond": 0.8,
-  "greedBonus": 0.5
+  "greedBonus": 0.5,
+  "repelRadius": 3.4,
+  "repelForce": 2.6,
+  "rerollsPerRun": 2
 }
