@@ -1,1 +1,1 @@
-{"name":"PetThem.Editor","includePlatforms":["Editor"],"references":["PetThem.Game"]}
+{"name":"PetThem.Editor","includePlatforms":["Editor"],"references":["PetThem.Game","PetThem.Combat"]}

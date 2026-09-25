@@ -31,18 +31,29 @@ public static class ServerHost
     }
 
     /// <summary>
-    /// The defaults the game ships with, read from the game's own file.
+    /// The numbers the game ships with, read from the game's own file.
     /// </summary>
     /// <remarks>
-    /// The same balance-default.json Unity loads from Resources, so the server prices a run with
-    /// the numbers the player actually played. Serving this file to the client instead of the
-    /// other way round is the next step; reading it is what makes that possible.
+    /// BalanceConfig is public fields, because Unity's JsonUtility only writes those.
+    /// System.Text.Json does not read fields unless it is told to, so without IncludeFields this
+    /// silently returned every default and ignored the file completely -- the server priced runs
+    /// with numbers nobody was playing, and said nothing.
+    ///
+    /// It went unnoticed because the checks built their expectation with new BalanceConfig() as
+    /// well, so both sides were wrong in the same direction and agreed. /health reports the
+    /// version it loaded now, and a check holds that against the file.
+    ///
+    /// The same mistake, in the same library, that the client contract check caught. Twice is a
+    /// pattern: any BalanceConfig crossing System.Text.Json needs these options.
     /// </remarks>
+    public static readonly System.Text.Json.JsonSerializerOptions BalanceJson =
+        new System.Text.Json.JsonSerializerOptions { IncludeFields = true };
+
     private static BalanceConfig LoadBalance(IServiceProvider _)
     {
         string path = Path.Combine(AppContext.BaseDirectory, "balance-default.json");
         BalanceConfig config = File.Exists(path)
-            ? System.Text.Json.JsonSerializer.Deserialize<BalanceConfig>(File.ReadAllText(path))
+            ? System.Text.Json.JsonSerializer.Deserialize<BalanceConfig>(File.ReadAllText(path), BalanceJson)
               ?? throw new InvalidOperationException("balance-default.json did not parse.")
             : new BalanceConfig();
         config.Validate();
@@ -51,7 +62,10 @@ public static class ServerHost
 
     private static void MapRoutes(WebApplication app)
     {
-        app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+        // The balance version is here so the running server can be asked which numbers it is
+        // using, rather than assumed. It was assumed, and it was wrong.
+        app.MapGet("/health", (BalanceConfig balance) =>
+            Results.Ok(new { status = "ok", balance = balance.version }));
 
         app.MapPost("/v1/session", (IProfileStore store) => Results.Ok(store.CreateGuest()));
 

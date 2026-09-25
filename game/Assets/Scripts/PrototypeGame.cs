@@ -40,6 +40,35 @@ namespace PetThem.Game
         private float accumulator, hurtFlash;
         /// <summary>When the camera stops shaking, and the size of the kick it started with.</summary>
         private float shakeUntil, shakeForce;
+
+        /// <summary>
+        /// A number rising off something that was just hit.
+        /// </summary>
+        /// <remarks>
+        /// Holds the world position it started at rather than the enemy it came from. The enemy is
+        /// usually dead a moment later, and the number should finish rising where the hit landed
+        /// rather than follow a corpse or vanish with it.
+        /// </remarks>
+        private struct HitNumber
+        {
+            public Vector3 At;
+            public float Amount, Born;
+            public bool Crit;
+        }
+
+        /// <summary>How long a damage number takes to rise and fade.</summary>
+        private const float HitNumberSeconds = .62f;
+
+        /// <summary>
+        /// The most numbers on screen at once. A hundred enemies caught in a blast would otherwise
+        /// put a hundred numbers up and hide the fight they are describing.
+        /// </summary>
+        private const int MaxHitNumbers = 18;
+
+        private readonly List<HitNumber> hitNumbers = new List<HitNumber>();
+
+        /// <summary>Enemy id to the moment its white flash ends.</summary>
+        private readonly Dictionary<int, float> enemyFlash = new Dictionary<int, float>();
         private GameAudio gameAudio;
         private ServerLink link;
         private Coach coach;
@@ -90,7 +119,7 @@ namespace PetThem.Game
         }
         private string recordingPath = "", recordingError = "", runId = "";
         private GUIStyle title, heading, body, small, button, menuTitle, menuHeading, menuButton, diagnostic, coaching;
-        private GUIStyle homeTitle, bigButton, tabButton, tabButtonOn, field;
+        private GUIStyle homeTitle, bigButton, tabButton, tabButtonOn, field, hitNumber, critNumber;
         private bool stylesReady;
         private string screenError = "";
         private string serverDraft;
@@ -233,6 +262,11 @@ namespace PetThem.Game
             for (int i = transient.Count - 1; i >= 0; i--)
                 if (Time.unscaledTime >= transientEnds[i])
                 { Destroy(transient[i]); transient.RemoveAt(i); transientEnds.RemoveAt(i); }
+            for (int i = hitNumbers.Count - 1; i >= 0; i--)
+                if (Time.unscaledTime - hitNumbers[i].Born >= HitNumberSeconds) hitNumbers.RemoveAt(i);
+            // Enemies die constantly, so their flashes are swept rather than left to pile up.
+            if (Tick8()) foreach (int id in new List<int>(enemyFlash.Keys))
+                if (Time.unscaledTime >= enemyFlash[id]) enemyFlash.Remove(id);
         }
 
         /// <summary>
@@ -252,6 +286,10 @@ namespace PetThem.Game
             float t = Time.unscaledTime * 47;
             gameCamera.transform.position += new Vector3(Mathf.Sin(t) * fade, Mathf.Cos(t * 1.37f) * fade, 0);
         }
+
+        /// <summary>True about eight times a second, for housekeeping that need not run every frame.</summary>
+        private bool Tick8() =>
+            (int)(Time.unscaledTime * 8) != (int)((Time.unscaledTime - Time.unscaledDeltaTime) * 8);
 
         private void ReadInput()
         {
@@ -524,9 +562,14 @@ namespace PetThem.Game
                     enemy.Kind == EnemyKind.Boss && world.BossState == BossAction.Telegraph ? world.BossTelegraph : 0);
                 // A chilled enemy is tinted towards Bori's blue so the slow is visible.
                 // The sprite is already coloured, so a chilled enemy is tinted rather than recoloured.
-                view.GetComponent<SpriteRenderer>().color = enemy.Slowed
-                    ? Color.Lerp(Color.white, Art.ColorOf(Look.Bori), .5f)
-                    : Color.white;
+                view.GetComponent<SpriteRenderer>().color =
+                    enemyFlash.TryGetValue(enemy.Id, out float until) && Time.unscaledTime < until
+                        // Blown out rather than tinted: it has to read for a twelfth of a second
+                        // against whatever colour the creature already is.
+                        ? new Color(4f, 4f, 4f)
+                        : enemy.Slowed
+                            ? Color.Lerp(Color.white, Art.ColorOf(Look.Bori), .5f)
+                            : Color.white;
             }
         }
         /// <summary>
@@ -702,6 +745,23 @@ namespace PetThem.Game
             if (e.type == "hurt") gameAudio.Sound("hurt");
             if (e.type == "boss_telegraph") gameAudio.Sound("boss");
             if (e.type == "attack") gameAudio.Sound(e.source);
+            if (e.type == "damage")
+            {
+                // Two marks for one hit, because they answer different questions: the flash says
+                // "that one, there" and the number says "and this much". Neither on its own is
+                // enough when forty of them are on screen.
+                enemyFlash[e.targetId] = Time.unscaledTime + .09f;
+                if (hitNumbers.Count >= MaxHitNumbers) hitNumbers.RemoveAt(0);
+                hitNumbers.Add(new HitNumber
+                {
+                    At = new Vector3(e.x, e.y, 0),
+                    Amount = e.value,
+                    Born = Time.unscaledTime,
+                    // The core marks a critical by adding to the source rather than with a flag,
+                    // so this reads the same thing the run log does.
+                    Crit = e.source != null && e.source.EndsWith("_crit"),
+                });
+            }
             if (e.type == "hurt")
             {
                 // Long enough to register as a hit rather than a flicker. Being hit is the only
@@ -822,6 +882,10 @@ namespace PetThem.Game
             // alone is easy to miss, so the current one is also the only bold one.
             tabButton = new GUIStyle(GUI.skin.label) { fontSize = 21, alignment = TextAnchor.MiddleCenter };
             tabButtonOn = new GUIStyle(tabButton) { fontStyle = FontStyle.Bold };
+            // Digits only, so the built-in font draws them whatever became of the chosen one.
+            hitNumber = new GUIStyle(GUI.skin.label)
+                { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            critNumber = new GUIStyle(hitNumber) { fontSize = 30 };
             field = new GUIStyle(GUI.skin.textField) { fontSize = 20 };
             if (glyphs != null) field.font = glyphs;
             if (glyphs != null) { tabButton.font = tabButtonOn.font = glyphs; }
@@ -1046,6 +1110,7 @@ namespace PetThem.Game
                     GUI.color = Color.white;
                 }
                 if (weapon == WeaponId.Arrow && holdAttack) DrawBowGauge(scale);
+                DrawHitNumbers(scale);
                 DrawHurtEdge(width);
                 DrawCoaching(width);
             }
@@ -1055,6 +1120,39 @@ namespace PetThem.Game
             if (world.State != RunState.Playing) { DrawResult(width); return; }
             if (paused) DrawPause(width);
         }
+        /// <summary>
+        /// The damage numbers, rising off where each hit landed.
+        /// </summary>
+        /// <remarks>
+        /// Until now nothing happened at all when an enemy was hit: the punch drew its ring, the
+        /// arrow flew, and the thing on the other end gave no sign of it. With a crowd on screen
+        /// there was no way to tell what was being hit, or whether anything was.
+        ///
+        /// Rounded up rather than down, so a hit that did something never reads as zero. A
+        /// critical is larger and warmer, which is the one place the crit upgrade becomes visible
+        /// at all.
+        /// </remarks>
+        private void DrawHitNumbers(float scale)
+        {
+            foreach (HitNumber hit in hitNumbers)
+            {
+                float age = (Time.unscaledTime - hit.Born) / HitNumberSeconds;
+                if (age < 0 || age > 1) continue;
+                Vector3 onScreen = gameCamera.WorldToScreenPoint(hit.At);
+                if (onScreen.z < 0) continue;
+                float x = onScreen.x / scale;
+                float y = (Screen.height - onScreen.y) / scale - age * 46;
+
+                Color previous = GUI.color;
+                GUI.color = hit.Crit
+                    ? new Color(1f, .78f, .3f, 1 - age)
+                    : new Color(1f, 1f, 1f, 1 - age);
+                GUI.Label(new Rect(x - 60, y - 30, 120, 34),
+                    Mathf.CeilToInt(hit.Amount).ToString(), hit.Crit ? critNumber : hitNumber);
+                GUI.color = previous;
+            }
+        }
+
         /// <summary>
         /// A red frame around the screen for a moment after a hit.
         /// </summary>

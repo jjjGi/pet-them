@@ -17,6 +17,10 @@ using PetThem.Server;
 // No test framework, for the same reason tools/CoreChecks has none: one fewer thing to install
 // before the checks can be run, and the output is a list anyone can read.
 
+// BalanceConfig is public fields, so reading it needs saying so. Kept here rather than borrowed
+// from the server, because the server getting this wrong is one of the things being checked.
+var ReadsFields = new JsonSerializerOptions { IncludeFields = true };
+
 int passed = 0;
 var failures = new List<string>();
 
@@ -39,6 +43,28 @@ await Check("the server answers before anyone has signed in", async () =>
 {
     HttpResponseMessage health = await http.GetAsync("/health");
     True(health.StatusCode == HttpStatusCode.OK, $"health returned {health.StatusCode}");
+});
+await Check("the server is running the balance the game ships, not the code defaults", async () =>
+{
+    // This is the check that was missing, and its absence hid a real one. LoadBalance read the
+    // shipped file with System.Text.Json, which ignores public fields unless told otherwise, so
+    // it quietly returned every default and the file might as well not have existed. Every check
+    // below built its expectation with new BalanceConfig() too, so both sides were wrong the same
+    // way and agreed with each other.
+    //
+    // The fix is not enough on its own: what stops it coming back is asking the running server
+    // which numbers it has and holding that against the file on disk.
+    // Its own options, deliberately not ServerHost.BalanceJson: a check that shares the thing it
+    // is testing fails for the wrong reason and stops describing the fault.
+    string shipped = File.ReadAllText(Path.Combine(RepoRoot(), "game/Assets/Resources/balance-default.json"));
+    var onDisk = JsonSerializer.Deserialize<BalanceConfig>(shipped, ReadsFields)!;
+    True(onDisk.version != new BalanceConfig().version,
+        "the shipped file matches the code defaults, so this check proves nothing");
+
+    HttpResponseMessage health = await http.GetAsync("/health");
+    string body = await health.Content.ReadAsStringAsync();
+    True(body.Contains(onDisk.version),
+        $"the server reports {body}, and the shipped balance is {onDisk.version}");
 });
 
 await Check("a profile needs a token, and only a real one", async () =>
@@ -76,7 +102,11 @@ await Check("two sessions are two different players", async () =>
 await Check("the server prices the run, not the client", async () =>
 {
     string token = await NewSession();
-    var config = new BalanceConfig();
+    // Read from the shipped file rather than constructed from the defaults. Building the
+    // expectation the same way the server builds its own is how a shared mistake goes unseen.
+    var config = JsonSerializer.Deserialize<BalanceConfig>(
+        File.ReadAllText(Path.Combine(RepoRoot(), "game/Assets/Resources/balance-default.json")),
+        ReadsFields)!;
     Contracts.RunSubmission run = Run("priced", kills: 50, seconds: 90, bossDefeated: true);
 
     Contracts.RunReceipt receipt = await SubmitRun(token, run);
@@ -368,6 +398,16 @@ Task<HttpResponseMessage> Unlock(string token, string pet) =>
 static Contracts.RunSubmission Run(string id, int kills = 20, float seconds = 60,
     bool bossDefeated = false, int seed = 4242) =>
     new(id, seed, WeaponId.Punch.ToString(), PetId.Mochi.ToString(), kills, seconds, bossDefeated);
+
+// Walks up to the folder holding both the game and the server.
+static string RepoRoot()
+{
+    var directory = new DirectoryInfo(AppContext.BaseDirectory);
+    while (directory != null && !Directory.Exists(Path.Combine(directory.FullName, "game/Assets")))
+        directory = directory.Parent;
+    if (directory == null) throw new Exception("Could not find the repository root.");
+    return directory.FullName;
+}
 
 static async Task<T> Read<T>(HttpResponseMessage response)
 {

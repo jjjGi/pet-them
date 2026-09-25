@@ -1743,6 +1743,29 @@ Check("a card at its last rank can be recognised before it is taken", () =>
         world.ChooseUpgrade(world.UpgradeChoices[0].Id);
     }
 });
+// The .NET half of the determinism measurement. Written every run so the file beside the Unity
+// one is never stale, and compared by scripts/determinism.ps1.
+{
+    // IncludeFields, or this reads none of the file: BalanceConfig is public fields because that
+    // is what Unity's JsonUtility writes, and System.Text.Json ignores fields by default. The
+    // first transcript taken without it compared a finite arena against an endless one and called
+    // the difference a determinism failure.
+    var config = System.Text.Json.JsonSerializer.Deserialize<BalanceConfig>(
+        File.ReadAllText(Path.Combine(FindRepoRoot(), "game/Assets/Resources/balance-default.json")),
+        new System.Text.Json.JsonSerializerOptions { IncludeFields = true })
+        ?? throw new Exception("balance-default.json did not parse.");
+    if (config.version == new BalanceConfig().version)
+        throw new Exception("balance-default.json was not read: the version is still the default.");
+    var world = DeterminismProbe.NewWorld(config);
+    string output = Path.Combine(FindRepoRoot(), "game/Builds/determinism-dotnet.txt");
+    Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+    File.WriteAllText(output, DeterminismProbe.Transcribe(world));
+    File.WriteAllText(Path.Combine(FindRepoRoot(), "game/Builds/outcomes-dotnet.txt"),
+        DeterminismProbe.Outcomes(config, 40));
+    Console.WriteLine($"Determinism transcript written to {output} " +
+        $"({new FileInfo(output).Length} bytes, .NET {Environment.Version}).");
+}
+
 Console.WriteLine(passed + " checks passed.");
 return;
 
