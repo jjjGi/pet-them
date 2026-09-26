@@ -17,11 +17,9 @@ namespace PetThem.Game
     /// connection and with no server configured at all, which is the whole reason the outbox is a
     /// file rather than a variable.
     ///
-    /// The local profile is still the one the game plays from. The server holds the same numbers
-    /// but has no storage or sign-in yet, so making it authoritative now would mean losing a
-    /// player's coins every time the process restarts. This is the half that can be built without
-    /// that being true, and the order matters: by the time authority moves, the uploads it depends
-    /// on will already have been running.
+    /// The local profile is still the one the game plays from. The server now persists guest
+    /// profiles and sessions in SQLite. Account linking and reconciling local purchases with
+    /// the server are still pending, so uploads do not replace the local wallet yet.
     ///
     /// Retrying is safe to do freely because the server pays a given runId once. The stubbornness
     /// here and the idempotency there are one design, split across two machines.

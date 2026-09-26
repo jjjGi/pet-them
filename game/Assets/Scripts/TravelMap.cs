@@ -6,12 +6,15 @@ namespace PetThem.Game
     /// <summary>Camera-sized pool of decorative chunks. No collision or combat rules live here.</summary>
     public sealed class TravelMap : MonoBehaviour
     {
+        public const int ThemeCount = 6;
         private const float Size = 12;
         private readonly List<Transform> chunks = new List<Transform>();
         private int lastX = int.MinValue, lastY, columns, rows, lastTheme = -1;
-        private readonly Sprite[] scenery = new Sprite[3];
-        private static readonly Color[] Ground = { new Color32(49,78,64,255), new Color32(180,139,91,255), new Color32(173,205,213,255) };
-        private static readonly Color[] Accent = { new Color32(111,156,87,255), new Color32(113,123,72,255), new Color32(103,155,186,255) };
+        private readonly Sprite[] scenery = new Sprite[ThemeCount];
+        private static readonly Color[] Ground = { new Color32(49,78,64,255), new Color32(180,139,91,255), new Color32(173,205,213,255),
+            new Color32(101,78,92,255), new Color32(39,65,73,255), new Color32(43,40,69,255) };
+        private static readonly Color[] Accent = { new Color32(111,156,87,255), new Color32(113,123,72,255), new Color32(103,155,186,255),
+            new Color32(249,170,195,255), new Color32(123,199,160,255), new Color32(140,170,244,255) };
 
         private Sprite Scenery(int theme)
         {
@@ -25,9 +28,10 @@ namespace PetThem.Game
                     float x = (px + .5f) / resolution - .5f, y = (py + .5f) / resolution - .5f;
                     Color c = Color.clear;
                     if (x*x/.17f + (y+.37f)*(y+.37f)/.006f < 1) c = new Color(0,0,0,.16f);
-                    if (Mathf.Abs(x) < .07f && y > -.36f && y < .12f) c = new Color32(105,80,65,255);
+                    if (theme != 5 && Mathf.Abs(x) < .07f && y > -.36f && y < .12f)
+                        c = theme == 4 ? new Color32(210,210,175,255) : new Color32(105,80,65,255);
                     bool leaf = false;
-                    if (theme == 0)
+                    if (theme == 0 || theme == 3)
                         leaf = x*x + (y-.12f)*(y-.12f) < .1f || (x+.2f)*(x+.2f) + (y+.02f)*(y+.02f) < .035f ||
                             (x-.2f)*(x-.2f) + (y+.02f)*(y+.02f) < .035f;
                     else if (theme == 1)
@@ -36,13 +40,19 @@ namespace PetThem.Game
                             (x>-.28f && x<0 && y>-.08f && y<.01f) ||
                             (Mathf.Abs(x-.22f)<.065f && y>-.13f && y<.1f) ||
                             (x>0 && x<.27f && y>-.15f && y<-.06f);
+                    else if (theme == 4)
+                        leaf = x*x/.15f + (y-.08f)*(y-.08f)/.065f < 1 && y > .015f;
+                    else if (theme == 5)
+                        leaf = y > -.32f && y < .42f && Mathf.Abs(x) < Mathf.Min((.42f-y)*.7f, (y+.55f)*.45f);
                     else
                         leaf = y>-.24f && y<.4f && Mathf.Abs(x)<(.4f-y)*.53f;
                     if (leaf)
                     {
                         float light = Mathf.Clamp01(.55f - x*.7f + y*.45f);
-                        c = Color.Lerp(new Color32(41,87,73,255), Accent[theme], light);
+                        c = Color.Lerp(theme == 3 ? new Color32(153,79,121,255) : new Color32(41,87,73,255), Accent[theme], light);
                         if (theme == 2 && (y > .2f || (y > -.06f && y < .04f))) c = new Color32(229,243,241,255);
+                        if (theme == 4 && Mathf.Sin(x*48)*Mathf.Cos(y*43) > .55f) c = new Color32(236,241,185,255);
+                        if (theme == 5) c = Color.Lerp(Accent[theme], new Color32(227,239,255,255), x < 0 ? .15f : .7f);
                         if (theme == 1 && Mathf.Abs(Mathf.Sin(x*85)) < .13f) c *= .85f;
                         c.a = 1;
                     }
@@ -67,7 +77,7 @@ namespace PetThem.Game
         }
         public void Follow(Camera camera, int theme)
         {
-            theme = Mathf.Clamp(theme, 0, 2);
+            theme = Mathf.Clamp(theme, 0, ThemeCount - 1);
             int width = Mathf.CeilToInt(camera.orthographicSize * camera.aspect * 2 / Size) + 3;
             int height = Mathf.CeilToInt(camera.orthographicSize * 2 / Size) + 3;
             int x = Mathf.FloorToInt(camera.transform.position.x / Size);

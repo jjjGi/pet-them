@@ -40,12 +40,12 @@ namespace PetThem.Editor
                 if (actor.transform.GetChild(0).localPosition != after) throw new Exception("Frozen pose moved.");
                 string output = Path.GetFullPath(Path.Combine(Application.dataPath,"../../experiments/travel-preview"));
                 Directory.CreateDirectory(output);
-                for (int theme = 0; theme < 3; theme++)
+                for (int theme = 0; theme < TravelMap.ThemeCount; theme++)
                 {
                     map.Follow(camera,theme);
                     Capture(camera,Path.Combine(output,"map-"+theme+".png"));
                 }
-                Debug.Log("TRAVEL VERIFIED: " + count + " chunks stable over 200 moves; revisit stable; limbs move and freeze; 3 renders.");
+                Debug.Log("TRAVEL VERIFIED: " + count + " chunks stable over 200 moves; revisit stable; limbs move and freeze; 6 renders.");
                 EditorApplication.Exit(0);
             }
             catch (Exception ex) { Debug.LogException(ex); EditorApplication.Exit(1); }

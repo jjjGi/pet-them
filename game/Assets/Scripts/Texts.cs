@@ -54,10 +54,19 @@ namespace PetThem.Game
         /// The one place the build number lives. The editor stamps the Android package with it and
         /// the menu prints it, so the version on the phone and the version on screen cannot drift.
         /// </summary>
-        public const string Version = "0.19.1";
+        public const string Version = "0.20.0";
         public static string MapPicker => Pick("탐험할 맵 · 끝없이 이동", "Explore · keep moving");
         public static string MapName(int theme) => theme == 1 ? Pick("모래 정원", "Dunes") :
-            theme == 2 ? Pick("눈꽃 들판", "Snowfield") : Pick("초록 숲", "Woodland");
+            theme == 2 ? Pick("눈꽃 들판", "Snowfield") :
+            theme == 3 ? Pick("벚꽃 정원", "Blossom") :
+            theme == 4 ? Pick("버섯 습지", "Mushroom") :
+            theme == 5 ? Pick("수정 동굴", "Crystal") : Pick("초록 숲", "Woodland");
+        public static string MapDescription(int theme) => theme == 1 ? Pick("모래 언덕과 선인장", "Sand and cacti") :
+            theme == 2 ? Pick("눈 덮인 침엽수 들판", "Snow-covered pines") :
+            theme == 3 ? Pick("분홍 꽃나무가 피어난 정원", "A garden of pink blossoms") :
+            theme == 4 ? Pick("물빛 바닥과 점박이 버섯", "Watery ground and spotted mushrooms") :
+            theme == 5 ? Pick("보랏빛 바닥과 푸른 수정", "Blue crystals on violet stone") :
+            Pick("푸른 나무와 풀밭", "Green trees and grass");
         public static string MusicSetting(bool enabled) => Pick("배경음악", "Music") + (enabled ? " ON" : " OFF");
         public static string SoundSetting(bool enabled) => Pick("효과음", "Sound") + (enabled ? " ON" : " OFF");
 

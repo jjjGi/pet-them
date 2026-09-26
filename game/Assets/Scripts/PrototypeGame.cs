@@ -157,7 +157,7 @@ namespace PetThem.Game
             coachLearned = PlayerPrefs.GetInt(CoachKey, 0);
             coach = new Coach(coachLearned);
             profile = ProfileStore.Load();
-            mapTheme = Mathf.Clamp(PlayerPrefs.GetInt("map.theme", 0), 0, 2);
+            mapTheme = Mathf.Clamp(PlayerPrefs.GetInt("map.theme", 0), 0, TravelMap.ThemeCount - 1);
             if (!profile.IsUnlocked(petChoice)) petChoice = PlayerProfile.StarterPet;
             CreateArena();
             player = Creature("You", Look.Player, 1.0f, 10).transform;
@@ -1304,21 +1304,22 @@ namespace PetThem.Game
             DrawWeaponRow(right,100,rightWidth);
             DrawPetRow(right,222,rightWidth);
             GUI.Label(new Rect(right,326,rightWidth,28),Texts.MapPicker,small);
-            for (int i = 0; i < 3; i++)
+            for (int i = 0; i < TravelMap.ThemeCount; i++)
             {
                 float cell = (rightWidth - 16) / 3;
                 Color previous = GUI.color;
                 GUI.color = mapTheme == i ? mint : paper;
-                if (GUI.Button(new Rect(right + i * (cell + 8),358,cell,48),Texts.MapName(i),menuButton))
+                if (GUI.Button(new Rect(right + i % 3 * (cell + 8),358 + i / 3 * 52,cell,46),Texts.MapName(i),menuButton))
                 { mapTheme = i; PlayerPrefs.SetInt("map.theme",i); PlayerPrefs.Save(); }
                 GUI.color = previous;
             }
-            if (GUI.Button(new Rect(right,426,rightWidth,76),Texts.Play,bigButton)) StartRun();
+            GUI.Label(new Rect(right,464,rightWidth,28),Texts.MapDescription(mapTheme),small);
+            if (GUI.Button(new Rect(right,500,rightWidth,68),Texts.Play,bigButton)) StartRun();
 
             // What a run is, in the two lines it takes. The coach teaches the controls in the
             // fight now, so this no longer has to.
-            GUILayout.BeginArea(new Rect(right,516,rightWidth,96));
-            GUILayout.Label(Texts.StartBlurb,body);
+            GUILayout.BeginArea(new Rect(right,580,rightWidth,48));
+            GUILayout.Label(Texts.StartBlurb,small);
             GUILayout.EndArea();
         }
 
