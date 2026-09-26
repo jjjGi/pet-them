@@ -5,7 +5,7 @@ using UnityEngine;
 
 namespace PetThem.Game
 {
-    public sealed class PrototypeGame : MonoBehaviour
+    public sealed partial class PrototypeGame : MonoBehaviour
     {
         private readonly Color ink = new Color32(19, 32, 44, 255);
         private readonly Color mint = new Color32(124, 239, 192, 255);
@@ -204,6 +204,7 @@ namespace PetThem.Game
             coach.Begin(weapon);
             coachPosition = world.Position;
             started = true; paused = false; accumulator = 0; hurtFlash = 0;
+            adventureNoticeUntil = 0;
             playerStrike = petStrike = -10;
             lastVisualTime = -1;
             lastVisualPosition = Vector3.zero;
@@ -255,6 +256,7 @@ namespace PetThem.Game
             SynchronizeEnemies();
             SynchronizeArrows();
             SynchronizeCompanions();
+            SynchronizeTreasure();
             DrawBeam();
             DrawBossWarning();
             gameAudio.SetCombat(started && !paused && !world.HasUpgradeChoice && world.State == RunState.Playing,
@@ -434,6 +436,7 @@ namespace PetThem.Game
             coach.UpgradeTaken(world.Time);
             gameAudio.Sound("upgrade");
             RecordEvents(); FlushRecording(); ClearInput();
+            foreach (CombatEvent e in world.Events) ShowAdventureEvent(e);
         }
         /// <summary>
         /// Pays out a finished run. Abandoning pays nothing, so restarting is not a way to farm
@@ -742,6 +745,7 @@ namespace PetThem.Game
 
         private void ShowEvent(CombatEvent e)
         {
+            ShowAdventureEvent(e);
             if (e.type == "hurt") gameAudio.Sound("hurt");
             if (e.type == "boss_telegraph") gameAudio.Sound("boss");
             if (e.type == "attack") gameAudio.Sound(e.source);
@@ -1051,6 +1055,7 @@ namespace PetThem.Game
                 GUI.Label(new Rect(28,15,260,45),Texts.GameTitle,heading);
                 GUI.Label(new Rect(width/2-100,13,240,45),FormatTime(world.Time) + " / 03:00",heading);
                 GUI.Label(new Rect(28,87,360,32),Texts.Loadout(weapon, petChoice),small);
+                DrawAdventureHud(width);
                 Panel(new Rect(28,48,220,9),new Color(.3f,.35f,.38f));
                 Panel(new Rect(28,48,220 * world.Health / world.MaxHealth,9),mint);
                 GUI.Label(new Rect(28,119,370,30),Texts.Level(world.Level, world.Level >= CombatWorld.MaxLevel,
@@ -1548,7 +1553,7 @@ namespace PetThem.Game
             Panel(new Rect(0,76,width,644),new Color(ink.r,ink.g,ink.b,.97f));
             float left = 32, gap = 16, cardWidth = (width - 64 - gap * 2) / 3;
             GUI.Label(new Rect(left,130,width-64,50),Texts.LevelUpHeadline,heading);
-            GUI.Label(new Rect(left,187,width-64,50),Texts.LevelUpHint,body);
+            GUI.Label(new Rect(left,187,width-64,50),world.AdventureEnabled ? Texts.EvolutionProgress(world) : Texts.LevelUpHint,body);
             for (int i = 0; i < world.UpgradeChoices.Count; i++)
             {
                 UpgradeChoice choice = world.UpgradeChoices[i];
@@ -1583,6 +1588,8 @@ namespace PetThem.Game
                 { SelectUpgrade(i); break; }
             }
             DrawRerollButton(width);
+            if (Time.unscaledTime < adventureNoticeUntil)
+                GUI.Label(new Rect(28,660,width-56,40),adventureNotice,small);
         }
 
         /// <summary>

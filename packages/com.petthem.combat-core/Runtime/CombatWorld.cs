@@ -31,6 +31,7 @@ namespace PetThem.Combat
         public float duration = 180, arenaHalfWidth = 14, arenaHalfHeight = 8;
         // Opt-in so old recordings and arena simulations keep their original rules.
         public bool endlessWorld;
+        public bool adventureEnabled;
         public float playerHealth = 100, playerSpeed = 4.5f;
         public float punchDamage = 26, punchRange = 2.6f, punchCooldown = 0.38f, punchKnockback = 1.5f;
         public float petDamage = 12, petRange = 7, petCooldown = 0.9f;
@@ -270,6 +271,7 @@ namespace PetThem.Combat
             RerollsLeft = twisted.rerollsPerRun;
             enemyView = enemies.AsReadOnly();
             eventView = events.AsReadOnly();
+            InitializeAdventure();
         }
 
         public void Step(PlayerInput input)
@@ -308,6 +310,7 @@ namespace PetThem.Combat
             // Killing the boss ends the run inside the attack above, so nothing after it may act.
             if (State == RunState.Playing) StepPet();
             if (State == RunState.Playing) StepCompanions();
+            if (State == RunState.Playing) StepAdventure();
             if (State == RunState.Playing) StepBoss();
 
             // Walked as a copy: thorns can kill the enemy being handled, and its blast can take

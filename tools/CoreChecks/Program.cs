@@ -1743,6 +1743,113 @@ Check("a card at its last rank can be recognised before it is taken", () =>
         world.ChooseUpgrade(world.UpgradeChoices[0].Id);
     }
 });
+Check("treasures require travel, pause with choices, pay once and stop after three", () =>
+{
+    var cfg = new BalanceConfig { adventureEnabled = true, endlessWorld = true, playerHealth = 100000,
+        petRange = .001f, bossSpawnTime = 1000 };
+    var world = new CombatWorld(cfg, 42, true);
+    for (int i = 0; i < 120; i++) world.Step(default);
+    True(world.TreasuresOpened == 0 && world.TreasureAvailable);
+    int initialRerolls = world.RerollsLeft;
+    for (int chest = 1; chest <= 3; chest++)
+    {
+        for (int i = 0; i < 2000 && world.TreasuresOpened < chest; i++)
+            world.Step(new PlayerInput(world.TreasureAvailable ? (world.TreasurePosition-world.Position).Normalized : default,default,false));
+        True(world.TreasuresOpened == chest && world.HasUpgradeChoice);
+        True(world.RerollsLeft == initialRerolls + chest);
+        int tick = world.Tick;
+        world.Step(new PlayerInput(new Vec2(1,0),default,false));
+        True(world.Tick == tick && world.TreasuresOpened == chest);
+        True(world.ChooseUpgrade(world.UpgradeChoices[0].Id));
+    }
+    for (int i = 0; i < 1500; i++) world.Step(default);
+    True(!world.TreasureAvailable && world.TreasuresOpened == 3);
+    world.Abandon(); int ended = world.Tick; world.Step(default); True(world.Tick == ended);
+    var fresh = new CombatWorld(cfg,42,true);
+    True(fresh.TreasuresOpened == 0 && !fresh.Evolved);
+});
+
+Check("adventure is opt-in and treasure coordinates never consume combat randomness", () =>
+{
+    var cfg = new BalanceConfig { endlessWorld = true, playerHealth = 100000, petRange = .001f, bossSpawnTime = 1000 };
+    var off = new CombatWorld(cfg,42,true);
+    cfg.adventureEnabled = true;
+    var on = new CombatWorld(cfg,42,true);
+    True(!off.TreasureAvailable && on.TreasureAvailable);
+    for (int i = 0; i < 600; i++)
+    {
+        off.Step(default); on.Step(default);
+        var json = new JsonSerializerOptions { IncludeFields = true };
+        True(JsonSerializer.Serialize(off.Events,json) == JsonSerializer.Serialize(on.Events,json));
+        True(off.Enemies.Count == on.Enemies.Count);
+        for (int j = 0; j < on.Enemies.Count; j++)
+        { Near(off.Enemies[j].Position.x,on.Enemies[j].Position.x); Near(off.Enemies[j].Position.y,on.Enemies[j].Position.y); }
+    }
+    True(!new CombatWorld(cfg,42,false).AdventureEnabled);
+});
+
+Check("all nine weapon and pet combinations evolve once and deal their new attack", () =>
+{
+    foreach (WeaponId weapon in Enum.GetValues<WeaponId>())
+    foreach (PetId pet in Enum.GetValues<PetId>())
+    {
+        var cfg = new BalanceConfig { adventureEnabled = true, endlessWorld = true, playerHealth = 100000,
+            gruntHealth = 100000, runnerHealth = 100000, bruteHealth = 100000, bossSpawnTime = 1000 };
+        var world = new CombatWorld(cfg,42,true,weapon,pet);
+        world.Apply(world.EvolutionWeaponUpgrade); world.Apply(world.EvolutionWeaponUpgrade);
+        world.Apply(UpgradeId.PetPower); True(!world.Evolved);
+        world.Apply(UpgradeId.PetPower); True(world.Evolved);
+        True(Count(world,"evolution",weapon + "_" + pet) == 1);
+        world.Apply(UpgradeId.PetPower);
+        True(Count(world,"evolution",weapon + "_" + pet) == 1); // Apply appends; no second unlock.
+        bool damaged = false, slowed = false;
+        for (int i = 0; i < 1800 && !damaged; i++)
+        {
+            world.Step(default);
+            damaged |= world.Events.Any(e => e.type == "damage" && e.source == "evolution" && e.value > 0);
+            slowed |= world.Events.Any(e => e.type == "slow" && e.source == "evolution");
+        }
+        True(damaged);
+        if (pet == PetId.Bori) True(slowed);
+        world.Abandon(); world.Step(default); True(world.Events.Count == 0);
+    }
+});
+
+Check("evolution ingredient remains available through rerolls without duplicate cards", () =>
+{
+    var cfg = new BalanceConfig { adventureEnabled = true, endlessWorld = true, playerHealth = 100000,
+        petDamage = 1000, petRange = 100, petCooldown = .01f, spawnInterval = .01f, minSpawnInterval = .01f };
+    var world = new CombatWorld(cfg,42,true);
+    for (int level = 0; level < 4; level++)
+    {
+        UntilChoice(world);
+        UpgradeId expected = level < 2 ? UpgradeId.PunchPower : UpgradeId.PetPower;
+        True(world.UpgradeChoices[0].Id == expected);
+        if (world.RerollsLeft > 0) { world.RerollUpgrades(); True(world.UpgradeChoices[0].Id == expected); }
+        True(world.UpgradeChoices.Select(c => c.Id).Distinct().Count() == 3);
+        world.ChooseUpgrade(expected);
+    }
+    True(world.Evolved);
+});
+
+Check("support evolution heals actual damage and respects its three second cooldown", () =>
+{
+    var cfg = new BalanceConfig { adventureEnabled = true, endlessWorld = true, playerHealth = 10000,
+        gruntHealth = 100000, runnerHealth = 100000, bruteHealth = 100000, bossSpawnTime = 1000,
+        petHealInterval = 1000, petRange = .001f };
+    var world = new CombatWorld(cfg,42,true,WeaponId.Laser,PetId.Coco);
+    for (int i = 0; i < 1800 && world.Health == world.MaxHealth; i++) world.Step(default);
+    True(world.Health < world.MaxHealth);
+    world.Apply(UpgradeId.LaserPower); world.Apply(UpgradeId.LaserPower);
+    world.Apply(UpgradeId.PetPower); world.Apply(UpgradeId.PetPower);
+    world.Step(default);
+    True(world.Events.Any(e => e.type == "heal" && e.source == "evolution" && e.value > 0));
+    True(world.Health <= world.MaxHealth);
+    for (int i = 0; i < 179; i++)
+    { world.Step(default); True(!world.Events.Any(e => e.type == "evolution_attack")); }
+    world.Step(default); True(world.Events.Any(e => e.type == "evolution_attack"));
+});
+
 // The .NET half of the determinism measurement. Written every run so the file beside the Unity
 // one is never stale, and compared by scripts/determinism.ps1.
 {

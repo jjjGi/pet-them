@@ -54,7 +54,16 @@ namespace PetThem.Game
         /// The one place the build number lives. The editor stamps the Android package with it and
         /// the menu prints it, so the version on the phone and the version on screen cannot drift.
         /// </summary>
-        public const string Version = "0.20.0";
+        public const string Version = "0.21.0";
+        public static string TreasureGuide(string direction, int distance) => Pick($"{direction} 보물 {distance}m", $"{direction} Treasure {distance}m");
+        public static string TreasureReward => Pick("보물 발견! 강화 + 다시 뽑기 1회 + 체력 15% 회복", "Treasure! Upgrade + 1 reroll + 15% healing");
+        public static string EvolutionReady(CombatWorld world) => Pick("조합 진화! ", "EVOLVED! ") + EvolutionName(world);
+        public static string EvolutionName(CombatWorld world) =>
+            (world.Weapon == WeaponId.Punch ? Pick("충격파", "Shockwave") : world.Weapon == WeaponId.Arrow ? Pick("삼중 사격", "Triple shot") : Pick("지원 광선", "Support beam")) +
+            " / " + (world.Pet == PetId.Mochi ? Pick("강타", "Power") : world.Pet == PetId.Bori ? Pick("감속", "Slow") : Pick("회복", "Heal"));
+        public static string EvolutionProgress(CombatWorld world) => world.Evolved ? EvolutionReady(world) :
+            Pick("진화 재료: ", "Evolution: ") + UpgradeTitle(world.EvolutionWeaponUpgrade) + " " + System.Math.Min(2,world.UpgradeRank(world.EvolutionWeaponUpgrade)) +
+            "/2 + " + UpgradeTitle(UpgradeId.PetPower) + " " + System.Math.Min(2,world.UpgradeRank(UpgradeId.PetPower)) + "/2";
         public static string MapPicker => Pick("탐험할 맵 · 끝없이 이동", "Explore · keep moving");
         public static string MapName(int theme) => theme == 1 ? Pick("모래 정원", "Dunes") :
             theme == 2 ? Pick("눈꽃 들판", "Snowfield") :

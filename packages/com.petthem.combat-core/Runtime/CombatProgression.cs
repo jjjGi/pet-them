@@ -227,6 +227,14 @@ namespace PetThem.Combat
                 progressionRandom ^= progressionRandom >> 17;
                 progressionRandom ^= progressionRandom << 5;
                 int index = (int)(progressionRandom % (uint)pool.Count);
+                // Keep one visible route to evolution; the other two slots remain random.
+                if (i == 0 && AdventureEnabled && !Evolved)
+                {
+                    UpgradeId ingredient = UpgradeRank(EvolutionWeaponUpgrade) < EvolutionRank
+                        ? EvolutionWeaponUpgrade : UpgradeId.PetPower;
+                    int ingredientIndex = pool.IndexOf(ingredient);
+                    if (ingredientIndex >= 0) index = ingredientIndex;
+                }
                 UpgradeId id = pool[index]; pool.RemoveAt(index);
                 upgradeChoices.Add(new UpgradeChoice(id, UpgradeRank(id) + 1));
                 Emit("upgrade_offer", id.ToString(), 0, UpgradeRank(id) + 1);
@@ -293,6 +301,7 @@ namespace PetThem.Combat
             }
             Emit("level_up", id.ToString(), 0, Level);
             Emit("upgrade", id.ToString(), 0, UpgradeRank(id));
+            TryEvolve();
             upgradeChoices.Clear();
             PrepareUpgradeChoices(); // Keep XP earned by several kills in the same tick.
             return true;
