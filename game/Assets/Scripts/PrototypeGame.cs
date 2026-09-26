@@ -71,6 +71,7 @@ namespace PetThem.Game
         private readonly Dictionary<int, float> enemyFlash = new Dictionary<int, float>();
         private GameAudio gameAudio;
         private ServerLink link;
+        private readonly RunTape tape = new RunTape();
         private Coach coach;
         private Vec2 coachPosition;
         private int coachLearned;
@@ -201,6 +202,7 @@ namespace PetThem.Game
             if (pet != null) Destroy(pet.gameObject);
             pet = Creature(petChoice.ToString(), LookOf(petChoice), 0.62f, 11).transform;
             world = new CombatWorld(config, unchecked(Environment.TickCount), true, weapon, petChoice, true);
+            tape.Begin();
             coach.Begin(weapon);
             coachPosition = world.Position;
             started = true; paused = false; accumulator = 0; hurtFlash = 0;
@@ -233,7 +235,10 @@ namespace PetThem.Game
                 accumulator += Mathf.Min(Time.unscaledDeltaTime, 0.1f);
                 while (accumulator >= CombatWorld.StepSeconds)
                 {
-                    world.Step(new PlayerInput(move, queuedPunch ? queuedAim : aim, queuedPunch, holdAttack, drawAmount));
+                    var applied = new PlayerInput(move, queuedPunch ? queuedAim : aim,
+                        queuedPunch, holdAttack, drawAmount);
+                    tape.Step(applied);
+                    world.Step(applied);
                     queuedPunch = false;
                     TeachFromStep();
                     RecordEvents();
@@ -432,7 +437,9 @@ namespace PetThem.Game
         private void SelectUpgrade(int index)
         {
             if (paused || index < 0 || index >= world.UpgradeChoices.Count) return;
-            if (!world.ChooseUpgrade(world.UpgradeChoices[index].Id)) return;
+            UpgradeId picked = world.UpgradeChoices[index].Id;
+            if (!world.ChooseUpgrade(picked)) return;
+            tape.Chose(picked);
             coach.UpgradeTaken(world.Time);
             gameAudio.Sound("upgrade");
             RecordEvents(); FlushRecording(); ClearInput();
@@ -451,7 +458,7 @@ namespace PetThem.Game
             ProfileStore.Save(profile);
             // Filed at the same moment, from the same place. The upload is the server's copy of
             // a decision already made locally, not a thing the player has to wait for.
-            link.Record(world, runId);
+            link.Record(world, runId, tape);
         }
 
         private void Buy(PetId target)
@@ -1611,6 +1618,7 @@ namespace PetThem.Game
             GUI.color = spare ? paper : new Color(1,1,1,.35f);
             if (GUI.Button(box,Texts.Reroll(world.RerollsLeft),button) && spare && world.RerollUpgrades())
             {
+                tape.Rerolled();
                 gameAudio.Sound("upgrade");
                 RecordEvents(); FlushRecording();
             }

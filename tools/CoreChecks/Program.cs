@@ -1850,6 +1850,84 @@ Check("support evolution heals actual damage and respects its three second coold
     world.Step(default); True(world.Events.Any(e => e.type == "evolution_attack"));
 });
 
+Check("the tape merges a held input instead of writing it down sixty times a second", () =>
+{
+    var tape = new RunTape();
+    tape.Begin();
+
+    var still = new PlayerInput(new Vec2(1, 0), new Vec2(0, 1), false, false, 0);
+    for (int i = 0; i < 600; i++) tape.Step(still);
+    True(tape.SegmentCount == 1);
+    True(tape.Inputs()[0].steps == 600);
+
+    // A different input starts a new segment; going back to the first does not rejoin it.
+    tape.Step(new PlayerInput(new Vec2(1, 0), new Vec2(0, 1), true, false, 0));
+    tape.Step(still);
+    True(tape.SegmentCount == 3);
+    True(tape.Inputs()[1].steps == 1);
+
+    // Every field is part of what "the same input" means. Changing any one of them splits.
+    foreach (PlayerInput changed in new[]
+             {
+                 new PlayerInput(new Vec2(0, 0), new Vec2(0, 1), false, false, 0),
+                 new PlayerInput(new Vec2(1, 0), new Vec2(1, 1), false, false, 0),
+                 new PlayerInput(new Vec2(1, 0), new Vec2(0, 1), true, false, 0),
+                 new PlayerInput(new Vec2(1, 0), new Vec2(0, 1), false, true, 0),
+                 new PlayerInput(new Vec2(1, 0), new Vec2(0, 1), false, false, .5f),
+             })
+    {
+        var one = new RunTape();
+        one.Begin();
+        one.Step(still);
+        one.Step(changed);
+        True(one.SegmentCount == 2);
+    }
+});
+Check("the tape records the cards, and the re-rolls that came before each one", () =>
+{
+    var tape = new RunTape();
+    tape.Begin();
+    tape.Rerolled();
+    tape.Rerolled();
+    tape.Chose(UpgradeId.PunchPower);
+    tape.Chose(UpgradeId.Vitality);
+    tape.Rerolled();
+    tape.Chose(UpgradeId.Drone);
+
+    Pick[] picks = tape.Picks();
+    True(picks.Length == 3);
+    // The re-rolls belong to the card that follows them, not to the one before.
+    True(picks[0].rerolls == 2 && picks[0].upgrade == UpgradeId.PunchPower.ToString());
+    True(picks[1].rerolls == 0 && picks[1].upgrade == UpgradeId.Vitality.ToString());
+    True(picks[2].rerolls == 1 && picks[2].upgrade == UpgradeId.Drone.ToString());
+});
+Check("a tape that would be refused is given up on rather than sent", () =>
+{
+    // Past the cap the whole thing goes. Half a tape is not a shorter run, it is a different one,
+    // and a server replaying it would arrive somewhere the player never was.
+    var tape = new RunTape();
+    tape.Begin();
+    for (int i = 0; i < RunTape.MaxSegments + 50; i++)
+        tape.Step(new PlayerInput(new Vec2(i % 97 * .01f, 0), default, false, false, 0));
+
+    True(!tape.Usable);
+    True(tape.Inputs().Length == 0);
+    True(tape.Picks().Length == 0);
+
+    // And it stays given up on: later steps and cards do not restart it.
+    tape.Step(new PlayerInput(new Vec2(1, 0), default, false, false, 0));
+    tape.Chose(UpgradeId.Vitality);
+    True(tape.Inputs().Length == 0 && tape.Picks().Length == 0);
+
+    // Under the server's own limit, so a tape that survives is one the server will accept.
+    True(RunTape.MaxSegments < 4000);
+
+    // A new run starts clean.
+    tape.Begin();
+    True(tape.Usable);
+    tape.Step(new PlayerInput(new Vec2(1, 0), default, false, false, 0));
+    True(tape.Inputs().Length == 1);
+});
 // The .NET half of the determinism measurement. Written every run so the file beside the Unity
 // one is never stale, and compared by scripts/determinism.ps1.
 {

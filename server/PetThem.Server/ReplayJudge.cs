@@ -49,11 +49,16 @@ public static class ReplayJudge
     /// </remarks>
     public const int MaxSegments = 4000;
 
-    /// <summary>Replays the run, or says why it will not.</summary>
+    /// <summary>
+    /// Replays the run, or says why it will not.
+    /// </summary>
+    /// <remarks>
+    /// The caller decides whether a run was meant to be replayed at all; an empty stream means it
+    /// was not, and never reaches here.
+    /// </remarks>
     public static ReplayVerdict Judge(Contracts.RunSubmission run, BalanceConfig defaults)
     {
-        if (run.Inputs == null || run.Inputs.Length == 0)
-            return Refuse("no_inputs");
+        if (run.Inputs is not { Length: > 0 }) return Refuse("no_inputs");
         if (run.Inputs.Length > MaxSegments)
             return Refuse("too_many_segments");
 

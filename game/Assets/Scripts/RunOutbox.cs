@@ -24,6 +24,37 @@ namespace PetThem.Game
         Rejected,
     }
 
+    /// <summary>One input held for a number of steps.</summary>
+    /// <remarks>
+    /// Run-length encoded because a thumb does not move sixty times a second. A three-minute run
+    /// is 10,800 steps and a few hundred of these, which is a few kilobytes on the wire and in
+    /// the queue file rather than a quarter of a megabyte.
+    ///
+    /// Field names and order match the server's InputSegment. A check compiles both and compares
+    /// them, because the game cannot reference the server project and the shape therefore exists
+    /// twice.
+    /// </remarks>
+    [Serializable]
+    public sealed class InputSegment
+    {
+        public int steps;
+        public float moveX, moveY, aimX, aimY;
+        public bool punch, hold;
+        public float draw;
+    }
+
+    /// <summary>What the player did at one level-up screen.</summary>
+    /// <remarks>
+    /// The re-rolls come first because they draw from the same stream the cards do: replaying the
+    /// choice without them deals a different hand, and the card that was taken is not in it.
+    /// </remarks>
+    [Serializable]
+    public sealed class Pick
+    {
+        public int rerolls;
+        public string upgrade = "";
+    }
+
     /// <summary>A finished run waiting to reach the server.</summary>
     /// <remarks>
     /// Public fields and [Serializable] because Unity's JsonUtility writes it to disk, the same
@@ -38,6 +69,17 @@ namespace PetThem.Game
         public int kills;
         public float seconds;
         public bool bossDefeated;
+
+        /// <summary>
+        /// Everything the player did, so the server can play the run again rather than take the
+        /// numbers above on trust.
+        /// </summary>
+        /// <remarks>
+        /// Empty is allowed and means "not recorded": the run is still uploaded and still paid,
+        /// just on its word. The replay is best effort; being paid is not.
+        /// </remarks>
+        public InputSegment[] inputs = Array.Empty<InputSegment>();
+        public Pick[] picks = Array.Empty<Pick>();
 
         /// <summary>How many times we have tried to send it.</summary>
         public int attempts;

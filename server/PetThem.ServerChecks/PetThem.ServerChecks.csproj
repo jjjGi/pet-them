@@ -18,6 +18,8 @@
       this is what stops the copies from drifting apart.
     -->
     <Compile Include="../../game/Assets/Scripts/RunOutbox.cs" />
+    <!-- And the recorder, so a tape the game would really produce can be replayed here. -->
+    <Compile Include="../../game/Assets/Scripts/RunTape.cs" />
   </ItemGroup>
 
 </Project>

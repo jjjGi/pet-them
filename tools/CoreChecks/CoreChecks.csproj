@@ -8,5 +8,8 @@
     <!-- When to retry an upload and when to stop is wrong for months if it cannot be run
          without the editor, so it has no UnityEngine dependency either. -->
     <Compile Include="../../game/Assets/Scripts/RunOutbox.cs" />
+    <!-- Merging inputs and knowing when to give up on a tape is wrong for months if it cannot be
+         run without the editor. -->
+    <Compile Include="../../game/Assets/Scripts/RunTape.cs" />
     <!-- The fixed fight whose transcript the editor and a device are compared against. -->
     <Compile Include="../../game/Assets/Scripts/DeterminismProbe.cs" /></ItemGroup></Project>

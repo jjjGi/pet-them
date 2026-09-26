@@ -87,10 +87,14 @@ public static class ServerHost
             // A submission carrying its inputs gets replayed, and the replay is what it is paid
             // for. One that does not is priced on its word, as before -- clients are already out
             // there and an endpoint that starts refusing them is an endpoint that lost their runs.
-            ReplayVerdict verdict = run.Inputs == null
-                ? new ReplayVerdict(false, "not_sent", 0, 0, false, 0)
-                : ReplayJudge.Judge(run, defaults);
-            if (run.Inputs != null && !verdict.Replayed)
+            // Empty counts as not sent, not as an empty replay. Unity JsonUtility has no way to
+            // write a null array -- it writes [] -- so a client with nothing to replay would
+            // otherwise be refused for sending exactly what it is able to send.
+            bool sentInputs = run.Inputs is { Length: > 0 };
+            ReplayVerdict verdict = sentInputs
+                ? ReplayJudge.Judge(run, defaults)
+                : new ReplayVerdict(false, "not_sent", 0, 0, false, 0);
+            if (sentInputs && !verdict.Replayed)
                 return Fail(StatusCodes.Status400BadRequest, "bad_replay", verdict.Refusal);
 
             int kills = verdict.Replayed ? verdict.Kills : run.Kills;

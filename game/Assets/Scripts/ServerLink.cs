@@ -95,11 +95,18 @@ namespace PetThem.Game
         /// <summary>
         /// Files a finished run for delivery. Returns having touched only a local file.
         /// </summary>
-        public void Record(CombatWorld world, string runId)
+        /// <param name="tape">
+        /// What the player did, so the server can replay the run instead of taking its word. An
+        /// abandoned tape hands over nothing, and the run is uploaded unreplayed rather than not
+        /// at all -- losing a verification is a smaller harm than losing a run.
+        /// </param>
+        public void Record(CombatWorld world, string runId, RunTape tape)
         {
             if (world == null || string.IsNullOrEmpty(runId)) return;
             bool added = outbox.Enqueue(new PendingRun
             {
+                inputs = tape != null ? tape.Inputs() : System.Array.Empty<InputSegment>(),
+                picks = tape != null ? tape.Picks() : System.Array.Empty<Pick>(),
                 runId = runId,
                 seed = world.Seed,
                 weapon = world.Weapon.ToString(),

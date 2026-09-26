@@ -353,9 +353,16 @@ await Check("a replay the world could not have had is refused", async () =>
     string token = await NewSession();
     Contracts.RunSubmission good = Replayable("shapes");
 
-    // Nothing to replay, an empty segment, a segment claiming more steps than a run has, and a
-    // card that was never dealt. Each is a different way of not describing a real run.
-    await RefusedRun(token, good with { RunId = "s1", Inputs = Array.Empty<Contracts.InputSegment>() }, "bad_replay");
+    // An empty stream is not a broken replay, it is a client that did not send one -- Unity
+    // JsonUtility cannot write a null array, so [] is what an old client sends. It is paid on its
+    // word, exactly as before, and the receipt says it was not replayed.
+    Contracts.RunReceipt none = await SubmitRun(token,
+        good with { RunId = "s0", Inputs = Array.Empty<Contracts.InputSegment>() });
+    True(!none.Replayed, "an empty stream was treated as a replay");
+    True(none.CoinsAwarded > 0, "a client that sent no replay was not paid");
+
+    // An empty segment, a segment claiming more steps than a run has, and a card that was never
+    // dealt. Each is a different way of not describing a real run.
     await RefusedRun(token, good with { RunId = "s2",
         Inputs = new[] { new Contracts.InputSegment(0, 0, 0, 0, 0, false, false, 0) } }, "bad_replay");
     await RefusedRun(token, good with { RunId = "s3",
@@ -363,7 +370,69 @@ await Check("a replay the world could not have had is refused", async () =>
     await RefusedRun(token, good with { RunId = "s4",
         Picks = new[] { new Contracts.Pick(0, "NoSuchUpgrade") } }, "bad_replay");
 
-    True((await Profile(token)).Coins == 0, "a refused replay still paid out");
+    // s0 was paid on purpose; nothing after it was.
+    True((await Profile(token)).Coins == none.CoinsAwarded, "a refused replay paid out");
+});
+await Check("a tape the game recorded is one the server can replay", async () =>
+{
+    // The end of the whole chain, and the part neither side can prove alone. The game records
+    // with RunTape, serialises with Unity's field-based shape, and the server has to be able to
+    // play that back and arrive where the player did. Both halves are compiled in here, so a
+    // rename on either side fails this rather than quietly paying the wrong amount.
+    var config = JsonSerializer.Deserialize<BalanceConfig>(
+        File.ReadAllText(Path.Combine(RepoRoot(), "game/Assets/Resources/balance-default.json")),
+        ReadsFields)!;
+    const int seed = 606061;
+    var world = new CombatWorld(config, seed, true, WeaponId.Punch, PetId.Mochi, enableTwists: true);
+    var tape = new RunTape();
+    tape.Begin();
+
+    for (int tick = 0; tick < 3600 && world.State == RunState.Playing; tick++)
+    {
+        if (world.HasUpgradeChoice)
+        {
+            UpgradeId chosen = world.UpgradeChoices[0].Id;
+            world.ChooseUpgrade(chosen);
+            tape.Chose(chosen);
+        }
+        var input = new PlayerInput(new Vec2(1, 0), new Vec2(1, 0), tick % 19 == 0, false, 0);
+        tape.Step(input);
+        world.Step(input);
+    }
+    True(tape.Usable, "the tape gave up on an ordinary run");
+    True(tape.SegmentCount < RunTape.MaxSegments,
+        $"a 3,600 step run used {tape.SegmentCount} segments");
+
+    // Serialised the way Unity writes it -- public fields, their own names -- and read by the
+    // server's own contract. This is where a mismatch between the two shapes shows up.
+    var queued = new PendingRun
+    {
+        runId = "taped-" + Guid.NewGuid().ToString("N")[..6],
+        seed = seed, weapon = WeaponId.Punch.ToString(), pet = PetId.Mochi.ToString(),
+        kills = world.Kills, seconds = world.Time, bossDefeated = world.BossDefeated,
+        inputs = tape.Inputs(), picks = tape.Picks(),
+    };
+    string body = JsonSerializer.Serialize(queued,
+        new JsonSerializerOptions(JsonSerializerDefaults.Web) { IncludeFields = true });
+    var parsed = JsonSerializer.Deserialize<Contracts.RunSubmission>(body,
+        new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+    True(parsed.Inputs != null && parsed.Inputs.Length == tape.SegmentCount,
+        "the inputs did not survive the wire");
+    True(parsed.Picks != null && parsed.Picks.Length == tape.Picks().Length,
+        "the picks did not survive the wire");
+
+    string token = await NewSession();
+    using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/runs");
+    request.Headers.Add("Authorization", "Bearer " + token);
+    request.Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
+    HttpResponseMessage response = await http.SendAsync(request);
+    True(response.StatusCode == HttpStatusCode.OK,
+        $"the server answered {response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
+
+    Contracts.RunReceipt receipt = await Read<Contracts.RunReceipt>(response);
+    True(receipt.Replayed, $"a recorded tape was not replayed: {receipt.ReplayRefusal}");
+    True(receipt.Verified, $"the game's own run did not verify: {world.Kills} vs {receipt.ReplayedKills}");
+    True(receipt.CoinsAwarded > 0, "a replayed run paid nothing");
 });
 await Check("a run that levels up needs its cards, and the re-rolls that came first", async () =>
 {
