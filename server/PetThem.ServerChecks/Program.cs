@@ -322,6 +322,67 @@ await Check("a database from a newer server is refused rather than misread", asy
     _ = new SqliteProfileStore(ordinary);
 });
 
+await Check("a run that sends its inputs is paid for what the replay did, not what it claimed", async () =>
+{
+    // The point of the whole thing. The client sends what it did; the server plays it and works
+    // out the score itself, so the claim stops being something to trust or refuse.
+    string token = await NewSession();
+    Contracts.RunSubmission honest = Replayable("honest-" + Guid.NewGuid().ToString("N")[..6]);
+
+    Contracts.RunReceipt receipt = await SubmitRun(token, honest);
+    True(receipt.Replayed, $"the run was not replayed: {receipt.ReplayRefusal}");
+    True(receipt.CoinsAwarded > 0, "a replayed run paid nothing");
+    True(receipt.Verified, $"an honest run was not verified (replay said {receipt.ReplayedKills})");
+
+    // The same inputs, with the kill count inflated. The payout must not move.
+    string token2 = await NewSession();
+    Contracts.RunSubmission liar = honest with
+    {
+        RunId = "liar-" + Guid.NewGuid().ToString("N")[..6],
+        Kills = honest.Kills + 5000,
+    };
+    Contracts.RunReceipt lied = await SubmitRun(token2, liar);
+    True(lied.Replayed, "the inflated run was not replayed");
+    True(lied.CoinsAwarded == receipt.CoinsAwarded,
+        $"inflating the kills moved the payout from {receipt.CoinsAwarded} to {lied.CoinsAwarded}");
+    True(!lied.Verified, "a claim five thousand kills out was reported as verified");
+    True(lied.ReplayedKills == receipt.ReplayedKills, "the replay itself changed");
+});
+await Check("a replay the world could not have had is refused", async () =>
+{
+    string token = await NewSession();
+    Contracts.RunSubmission good = Replayable("shapes");
+
+    // Nothing to replay, an empty segment, a segment claiming more steps than a run has, and a
+    // card that was never dealt. Each is a different way of not describing a real run.
+    await RefusedRun(token, good with { RunId = "s1", Inputs = Array.Empty<Contracts.InputSegment>() }, "bad_replay");
+    await RefusedRun(token, good with { RunId = "s2",
+        Inputs = new[] { new Contracts.InputSegment(0, 0, 0, 0, 0, false, false, 0) } }, "bad_replay");
+    await RefusedRun(token, good with { RunId = "s3",
+        Inputs = new[] { new Contracts.InputSegment(999_999, 0, 0, 0, 0, false, false, 0) } }, "bad_replay");
+    await RefusedRun(token, good with { RunId = "s4",
+        Picks = new[] { new Contracts.Pick(0, "NoSuchUpgrade") } }, "bad_replay");
+
+    True((await Profile(token)).Coins == 0, "a refused replay still paid out");
+});
+await Check("a run that levels up needs its cards, and the re-rolls that came first", async () =>
+{
+    // Step does nothing while cards are on the table, so a replay with no answer for the level-up
+    // screen stops there. Without the picks it would report the fight it managed before the first
+    // level and be paid for that.
+    string token = await NewSession();
+    Contracts.RunSubmission levelling = Replayable("levels", steps: 5400);
+
+    await RefusedRun(token, levelling with { RunId = "no-picks", Picks = Array.Empty<Contracts.Pick>() },
+        "bad_replay");
+
+    // A re-roll moves the cards that follow, so replaying the choice without it deals a hand the
+    // chosen card is not in.
+    Contracts.RunReceipt withPicks = await SubmitRun(token, levelling);
+    True(withPicks.Replayed, $"the levelling run was not replayed: {withPicks.ReplayRefusal}");
+    True(withPicks.ReplayedKills > 0, "a run long enough to level up killed nothing");
+});
+
 await app.StopAsync();
 // Pooled connections keep the files open, and Windows will not delete a file that is.
 Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
@@ -379,7 +440,11 @@ async Task<HttpResponseMessage> Post(string token, string path, object body)
 async Task<Contracts.RunReceipt> SubmitRun(string token, Contracts.RunSubmission run)
 {
     HttpResponseMessage response = await Post(token, "/v1/runs", run);
-    response.EnsureSuccessStatusCode();
+    // The body, not just the status. EnsureSuccessStatusCode throws away the one thing the server
+    // sent to explain itself, and a failing check that does not say why is most of a wasted run.
+    if (!response.IsSuccessStatusCode)
+        throw new Exception($"{run.RunId}: {(int)response.StatusCode} " +
+            await response.Content.ReadAsStringAsync());
     return await Read<Contracts.RunReceipt>(response);
 }
 
@@ -398,6 +463,49 @@ Task<HttpResponseMessage> Unlock(string token, string pet) =>
 static Contracts.RunSubmission Run(string id, int kills = 20, float seconds = 60,
     bool bossDefeated = false, int seed = 4242) =>
     new(id, seed, WeaponId.Punch.ToString(), PetId.Mochi.ToString(), kills, seconds, bossDefeated);
+
+// A run with its inputs attached, built by playing it here so the segments describe a fight the
+// server can actually reproduce. The picks are taken as they are offered, which is what a player
+// pressing the first card would produce.
+Contracts.RunSubmission Replayable(string runId, int steps = 1800)
+{
+    var config = JsonSerializer.Deserialize<BalanceConfig>(
+        File.ReadAllText(Path.Combine(RepoRoot(), "game/Assets/Resources/balance-default.json")),
+        ReadsFields)!;
+    const int seed = 515151;
+    var world = new CombatWorld(config, seed, true, WeaponId.Punch, PetId.Mochi, enableTwists: true);
+    var picks = new List<Contracts.Pick>();
+    // One segment per step is wasteful on the wire and exactly right here: it keeps the check
+    // about replaying rather than about run-length encoding.
+    var segments = new List<Contracts.InputSegment>();
+    for (int tick = 0; tick < steps && world.State == RunState.Playing; tick++)
+    {
+        if (world.HasUpgradeChoice)
+        {
+            picks.Add(new Contracts.Pick(0, world.UpgradeChoices[0].Id.ToString()));
+            world.ChooseUpgrade(world.UpgradeChoices[0].Id);
+        }
+        bool punch = tick % 19 == 0;
+        // Merged the way a client would, rather than one segment per step: the first attempt sent
+        // 5,400 of them and was refused for it, which is the bound doing its job.
+        if (segments.Count > 0 && segments[^1].Punch == punch)
+            segments[^1] = segments[^1] with { Steps = segments[^1].Steps + 1 };
+        else
+            segments.Add(new Contracts.InputSegment(1, 1, 0, 1, 0, punch, false, 0));
+        world.Step(new PlayerInput(new Vec2(1, 0), new Vec2(1, 0), punch, false, 0));
+    }
+    return new Contracts.RunSubmission(runId, seed, WeaponId.Punch.ToString(), PetId.Mochi.ToString(),
+        world.Kills, world.Time, world.BossDefeated, segments.ToArray(), picks.ToArray());
+}
+
+async Task RefusedRun(string token, Contracts.RunSubmission run, string error)
+{
+    HttpResponseMessage response = await Post(token, "/v1/runs", run);
+    True(response.StatusCode == HttpStatusCode.BadRequest,
+        $"{run.RunId}: expected 400, got {response.StatusCode}");
+    Contracts.Problem problem = await Read<Contracts.Problem>(response);
+    True(problem.Error == error, $"{run.RunId}: expected '{error}', got '{problem.Error}'");
+}
 
 // Walks up to the folder holding both the game and the server.
 static string RepoRoot()

@@ -83,12 +83,26 @@ public static class ServerHost
             // config the player played, without trusting the client to report which twist it was.
             var world = new CombatWorld(defaults, run.Seed, true,
                 Enum.Parse<WeaponId>(run.Weapon), Enum.Parse<PetId>(run.Pet), enableTwists: true);
-            int coins = CombatWorld.CoinsFor(world.GetConfig(), run.Kills, run.Seconds, run.BossDefeated);
+
+            // A submission carrying its inputs gets replayed, and the replay is what it is paid
+            // for. One that does not is priced on its word, as before -- clients are already out
+            // there and an endpoint that starts refusing them is an endpoint that lost their runs.
+            ReplayVerdict verdict = run.Inputs == null
+                ? new ReplayVerdict(false, "not_sent", 0, 0, false, 0)
+                : ReplayJudge.Judge(run, defaults);
+            if (run.Inputs != null && !verdict.Replayed)
+                return Fail(StatusCodes.Status400BadRequest, "bad_replay", verdict.Refusal);
+
+            int kills = verdict.Replayed ? verdict.Kills : run.Kills;
+            float seconds = verdict.Replayed ? verdict.Seconds : run.Seconds;
+            bool bossDefeated = verdict.Replayed ? verdict.BossDefeated : run.BossDefeated;
+            int coins = CombatWorld.CoinsFor(world.GetConfig(), kills, seconds, bossDefeated);
 
             RunOutcome outcome = store.ApplyRun(playerId, run.RunId, coins);
             return Results.Ok(new Contracts.RunReceipt(run.RunId, outcome.CoinsAwarded,
                 outcome.AlreadyCounted, world.Twist.ToString(),
-                Contracts.ProfileResponse.From(outcome.Profile)));
+                Contracts.ProfileResponse.From(outcome.Profile),
+                verdict.Replayed, ReplayJudge.Agrees(run, verdict), verdict.Kills, verdict.Refusal));
         }));
 
         app.MapPost("/v1/shop/unlock", (HttpContext http, IProfileStore store, BalanceConfig defaults,
@@ -119,8 +133,9 @@ public static class ServerHost
     /// These are shape checks, not proof: a run that passes them is still only the client's word
     /// about how the fight went. They exist so that nonsense -- a negative kill count, an hour-long
     /// three-minute run, a weapon that does not exist -- never reaches the payout at all.
-    /// The kill count is the one that is still taken on trust, and replay validation is what
-    /// would close it.
+    /// A submission that carries its inputs is not taken on trust at all: it is replayed, and the
+    /// replay is what it is paid for. These shape checks still run first, because refusing
+    /// nonsense costs nothing and replaying it costs a simulation.
     /// </remarks>
     private static IResult? Reject(Contracts.RunSubmission run, BalanceConfig defaults)
     {

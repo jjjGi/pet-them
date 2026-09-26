@@ -36,10 +36,42 @@ public static class Contracts
     /// </remarks>
     public sealed record RunSubmission(
         string RunId, int Seed, string Weapon, string Pet,
-        int Kills, float Seconds, bool BossDefeated);
+        int Kills, float Seconds, bool BossDefeated,
+        InputSegment[]? Inputs = null, Pick[]? Picks = null);
 
+    /// <summary>
+    /// One input held for a number of steps.
+    /// </summary>
+    /// <remarks>
+    /// Run-length encoded because a thumb does not move sixty times a second. Three minutes is
+    /// 10,800 steps and a few hundred segments, which is a few kilobytes rather than a quarter of
+    /// a megabyte.
+    /// </remarks>
+    public sealed record InputSegment(
+        int Steps, float MoveX, float MoveY, float AimX, float AimY,
+        bool Punch, bool Hold, float Draw);
+
+    /// <summary>
+    /// What the player did at one level-up screen.
+    /// </summary>
+    /// <remarks>
+    /// The re-roll count comes first because a re-roll draws from the same random stream the cards
+    /// come from: replaying the choice without replaying the re-rolls deals a different hand, and
+    /// the chosen card would not be in it.
+    /// </remarks>
+    public sealed record Pick(int Rerolls, string Upgrade);
+
+    /// <summary>
+    /// What the server paid, and what it made of the run.
+    /// </summary>
+    /// <remarks>
+    /// Both numbers are reported, not just the one that was used. A client that finds its own
+    /// count a long way from the server's has learnt something worth logging, and so has anybody
+    /// reading the run afterwards.
+    /// </remarks>
     public sealed record RunReceipt(
-        string RunId, int CoinsAwarded, bool AlreadyCounted, string Twist, ProfileResponse Profile);
+        string RunId, int CoinsAwarded, bool AlreadyCounted, string Twist, ProfileResponse Profile,
+        bool Replayed = false, bool Verified = false, int ReplayedKills = 0, string ReplayRefusal = "");
 
     public sealed record UnlockRequest(string Pet);
 
