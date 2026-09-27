@@ -36,4 +36,3 @@ Landscape 3-column by 2-row comparison board with six equal spacious cells. Larg
 6 PAPER: layered colored cut-paper puppet / paper-craft miniature aesthetic, visible flat planes, deliberately angular folds and cut edges, subtle layered paper thickness, restrained paper texture. P1 red raincoat made of simple folded cut-paper pieces, P4 yellow folded mask naturally fits; articulated paper limbs and clear silhouettes. Less volumetric than 3D block styles.
 
 Visual style board for character and art direction, NOT real game screenshots, NOT finished 3D models or sprite sheets. No weapons beyond P1's simple net, no costume redesign, no new accessories. Focus on how pixel density, hard corners, slight bevels, fully rounded forms, ink and paper change the same two characters. Strong craftsmanship and clarity, enough space around each pair.
-
