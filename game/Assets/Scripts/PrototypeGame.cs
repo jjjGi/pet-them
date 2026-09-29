@@ -461,6 +461,27 @@ namespace PetThem.Game
             link.Record(world, runId, tape);
         }
 
+        /// <summary>
+        /// Leaves a run in progress and goes back to the home screen.
+        /// </summary>
+        /// <remarks>
+        /// The run is abandoned rather than banked, which is the same rule restarting already
+        /// follows: <see cref="BankRun"/> pays only a run that was won or lost, so pausing at a
+        /// good moment and walking away cannot be turned into coins.
+        ///
+        /// The tape is dropped here rather than left for the next <see cref="StartRun"/> to reset,
+        /// because between leaving and playing again it is a half-recorded run sitting in memory,
+        /// and nothing should be able to send it.
+        /// </remarks>
+        private void LeaveRun()
+        {
+            EndRecording(true);
+            tape.Abandon();
+            started = false;
+            paused = false;
+            homeTab = HomeTab.Home;
+        }
+
         private void Buy(PetId target)
         {
             if (!profile.Unlock(target, config)) return;
@@ -1515,6 +1536,13 @@ namespace PetThem.Game
             GUILayout.Space(12);
             if (GUILayout.Button(Texts.Restart,menuButton,GUILayout.MinHeight(56))) StartRun();
             GUILayout.EndHorizontal();
+            // On its own row, under the two that keep you playing. Leaving here throws the run
+            // away, and a button that does that should not sit where a thumb reaching for
+            // "keep going" can land on it.
+            GUILayout.Space(12);
+            if (GUILayout.Button(Texts.ToHome,menuButton,GUILayout.MinHeight(56))) LeaveRun();
+            GUILayout.Space(6);
+            GUILayout.Label(Texts.LeavingLosesRun,small);
             GUILayout.Space(10);
             GUILayout.Label(recordingError.Length > 0 ? recordingError : Texts.RunLog(recordingPath),small);
             GUILayout.EndScrollView();

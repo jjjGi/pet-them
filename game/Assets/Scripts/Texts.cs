@@ -491,6 +491,9 @@ namespace PetThem.Game
         public static string KeepGoing => Pick("계속하기  >", "KEEP GOING  >");
         public static string TryAgain => Pick("다시 도전  >", "TRY AGAIN  >");
         public static string Restart => Pick("처음부터", "RESTART");
+        public static string LeavingLosesRun =>
+            Pick("나가면 이번 판은 기록되지 않고 코인도 받지 못합니다.",
+                 "Leave and this run is not counted, and pays nothing.");
         public static string Shop(int coins) => Pick($"상점  /  {coins}", $"SHOP  /  {coins}");
         public static string Back => Pick("< 뒤로", "< BACK");
         public static string Build => Pick(
