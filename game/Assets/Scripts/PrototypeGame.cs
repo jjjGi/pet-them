@@ -1065,9 +1065,28 @@ namespace PetThem.Game
             GUI.matrix = Matrix4x4.identity;
             GUI.color = Color.white;
             Panel(new Rect(0,0,Screen.width,Screen.height), new Color(.09f,.03f,.04f,1));
-            GUI.Label(new Rect(24,24,Screen.width-48,Screen.height-140),
-                Texts.ScreenBroke(Texts.Version) + "\n\n" + screenError);
-            if (GUI.Button(new Rect(24,Screen.height-96,320,64), Texts.ScreenRetry))
+
+            // Built from nothing rather than from GUI.skin. The skin's label draws near-black
+            // text, and on this panel that is invisible: a reported failure looked exactly like
+            // the blank screen it exists to explain. No font is assigned either, so this falls
+            // back to the built-in one. That font cannot draw Hangul, which is why the first line
+            // and the button are ASCII -- the exception text is ASCII too, and reading it is the
+            // entire point of this screen.
+            var loud = new GUIStyle
+            {
+                fontSize = Mathf.Max(16, Screen.height / 38),
+                wordWrap = true,
+                normal = { textColor = Color.white },
+            };
+            string report = "SCREEN FAILED  /  " + Texts.Version +
+                (fontReport.Length > 0 ? "  /  " + fontReport : "") +
+                "\n\n" + screenError + "\n\n" + Texts.ScreenBroke(Texts.Version);
+            GUI.Label(new Rect(24,24,Screen.width-48,Screen.height-140), report, loud);
+
+            // The style carries no background, so the panel underneath is what makes it a button.
+            var retry = new Rect(24,Screen.height-96,360,64);
+            Panel(retry, new Color(.45f,.16f,.18f,1));
+            if (GUI.Button(retry, "  RETRY  /  " + Texts.ScreenRetry, loud))
             { screenError = ""; stylesReady = false; }
         }
 
