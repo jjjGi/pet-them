@@ -123,6 +123,7 @@ namespace PetThem.Game
         private GUIStyle homeTitle, bigButton, tabButton, tabButtonOn, field, hitNumber, critNumber;
         private bool stylesReady;
         private string screenError = "";
+        private string skinReport = "";
         private string serverDraft;
         private string fontReport = "";
         private bool koreanUnavailable;
@@ -894,11 +895,43 @@ namespace PetThem.Game
             if (stylesReady) return;
             Font glyphs = ResolveFont();
 
-            title = new GUIStyle(GUI.skin.label) { fontSize = 56, fontStyle = FontStyle.Bold };
-            heading = new GUIStyle(GUI.skin.label) { fontSize = 26, fontStyle = FontStyle.Bold };
-            body = new GUIStyle(GUI.skin.label) { fontSize = 20, wordWrap = true };
+            // Every style here used to inherit from GUI.skin, which the engine loads from its
+            // built-in resources. On a phone that came back unusable and the first line of this
+            // method threw, so nothing drew -- and the screen that reports such a failure drew
+            // from the skin too, which is why it arrived as a blank screen rather than a message.
+            //
+            // Nothing below actually needs the skin: the game sets its own font, sizes and
+            // colours. The one thing it borrowed was the button background, which is replaced
+            // here, so a missing skin costs appearance rather than the whole interface.
+            GUISkin skin = GUI.skin;
+            GUIStyle skinLabel = skin != null ? skin.label : null;
+            GUIStyle skinButton = skin != null ? skin.button : null;
+            GUIStyle skinField = skin != null ? skin.textField : null;
+            skinReport = skinLabel != null && skinButton != null && skinField != null ? ""
+                : "GUI.skin unusable: skin " + (skin == null ? "null" : "ok") +
+                  ", label " + (skinLabel == null ? "null" : "ok") +
+                  ", button " + (skinButton == null ? "null" : "ok") +
+                  ", field " + (skinField == null ? "null" : "ok");
+
+            GUIStyle labelBase = skinLabel ?? new GUIStyle();
+            GUIStyle buttonBase = skinButton ?? new GUIStyle
+            {
+                alignment = TextAnchor.MiddleCenter,
+                padding = new RectOffset(10,10,8,8),
+                normal = { background = Flat(new Color32(34,57,65,255)) },
+            };
+            GUIStyle fieldBase = skinField ?? new GUIStyle
+            {
+                alignment = TextAnchor.MiddleLeft,
+                padding = new RectOffset(8,8,6,6),
+                normal = { background = Flat(new Color32(12,22,30,255)) },
+            };
+
+            title = new GUIStyle(labelBase) { fontSize = 56, fontStyle = FontStyle.Bold };
+            heading = new GUIStyle(labelBase) { fontSize = 26, fontStyle = FontStyle.Bold };
+            body = new GUIStyle(labelBase) { fontSize = 20, wordWrap = true };
             small = new GUIStyle(body) { fontSize = 15 };
-            button = new GUIStyle(GUI.skin.button) { fontSize = 23, fontStyle = FontStyle.Bold };
+            button = new GUIStyle(buttonBase) { fontSize = 23, fontStyle = FontStyle.Bold };
             if (glyphs != null)
                 title.font = heading.font = body.font = small.font = button.font = glyphs;
             title.normal.textColor = heading.normal.textColor = body.normal.textColor = paper;
@@ -912,13 +945,13 @@ namespace PetThem.Game
             bigButton = new GUIStyle(button) { fontSize = 30 };
             // The selected tab is not just tinted: on a phone in sunlight a colour difference
             // alone is easy to miss, so the current one is also the only bold one.
-            tabButton = new GUIStyle(GUI.skin.label) { fontSize = 21, alignment = TextAnchor.MiddleCenter };
+            tabButton = new GUIStyle(labelBase) { fontSize = 21, alignment = TextAnchor.MiddleCenter };
             tabButtonOn = new GUIStyle(tabButton) { fontStyle = FontStyle.Bold };
             // Digits only, so the built-in font draws them whatever became of the chosen one.
-            hitNumber = new GUIStyle(GUI.skin.label)
+            hitNumber = new GUIStyle(labelBase)
                 { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
             critNumber = new GUIStyle(hitNumber) { fontSize = 30 };
-            field = new GUIStyle(GUI.skin.textField) { fontSize = 20 };
+            field = new GUIStyle(fieldBase) { fontSize = 20 };
             if (glyphs != null) field.font = glyphs;
             if (glyphs != null) { tabButton.font = tabButtonOn.font = glyphs; }
             tabButton.normal.textColor = new Color(1,1,1,.45f);
@@ -926,7 +959,7 @@ namespace PetThem.Game
 
             // Deliberately keeps the built-in font: if the chosen one cannot draw, this line is
             // the only thing on screen that can say so.
-            diagnostic = new GUIStyle(GUI.skin.label) { fontSize = 14, wordWrap = true };
+            diagnostic = new GUIStyle(labelBase) { fontSize = 14, wordWrap = true };
             diagnostic.normal.textColor = new Color(1, 1, 1, .5f);
             stylesReady = true;
         }
@@ -1024,6 +1057,15 @@ namespace PetThem.Game
         }
         private void Panel(Rect rect, Color color)
         { Color previous = GUI.color; GUI.color = color; GUI.DrawTexture(rect, Texture2D.whiteTexture); GUI.color = previous; }
+
+        /// <summary>A one-pixel texture, for styles that have to supply their own background.</summary>
+        private static Texture2D Flat(Color color)
+        {
+            var texture = new Texture2D(1, 1) { hideFlags = HideFlags.HideAndDontSave };
+            texture.SetPixel(0, 0, color);
+            texture.Apply();
+            return texture;
+        }
         /// <summary>
         /// Draws the interface, or says why it could not.
         /// </summary>
@@ -1080,6 +1122,7 @@ namespace PetThem.Game
             };
             string report = "SCREEN FAILED  /  " + Texts.Version +
                 (fontReport.Length > 0 ? "  /  " + fontReport : "") +
+                (skinReport.Length > 0 ? "\n" + skinReport : "") +
                 "\n\n" + screenError + "\n\n" + Texts.ScreenBroke(Texts.Version);
             GUI.Label(new Rect(24,24,Screen.width-48,Screen.height-140), report, loud);
 
@@ -1467,7 +1510,7 @@ namespace PetThem.Game
             float contentWidth = Mathf.Min(760, width - 64);
             float left = (width - contentWidth) / 2;
             GUILayout.BeginArea(new Rect(left,94,contentWidth,528));
-            settingsScroll = GUILayout.BeginScrollView(settingsScroll, false, false);
+            settingsScroll = GUILayout.BeginScrollView(settingsScroll, false, false, GUIStyle.none, GUIStyle.none, GUIStyle.none);
 
             if (!koreanUnavailable &&
                 GUILayout.Button(Texts.LanguageName(Texts.Next),menuButton,GUILayout.MinHeight(46)))
@@ -1545,7 +1588,7 @@ namespace PetThem.Game
             float contentWidth = Mathf.Min(760, width - 64);
             float left = (width - contentWidth) / 2;
             GUILayout.BeginArea(new Rect(left,100,contentWidth,600));
-            menuScroll = GUILayout.BeginScrollView(menuScroll, false, false);
+            menuScroll = GUILayout.BeginScrollView(menuScroll, false, false, GUIStyle.none, GUIStyle.none, GUIStyle.none);
             GUILayout.Label(Texts.PausedHeadline,menuTitle);
             GUILayout.Space(12);
             DrawBuild();
@@ -1583,7 +1626,7 @@ namespace PetThem.Game
             float contentWidth = Mathf.Min(760, width - 64);
             float left = (width - contentWidth) / 2;
             GUILayout.BeginArea(new Rect(left,100,contentWidth,600));
-            menuScroll = GUILayout.BeginScrollView(menuScroll, false, false);
+            menuScroll = GUILayout.BeginScrollView(menuScroll, false, false, GUIStyle.none, GUIStyle.none, GUIStyle.none);
             GUILayout.Label(world.BossDefeated ? Texts.BossDownHeadline :
                 world.State == RunState.Won ? Texts.WonHeadline : Texts.LostHeadline,menuTitle);
             GUILayout.Space(12);
