@@ -1,0 +1,16 @@
+<!--
+  Keeps the engine's own GUI types out of the stripper.
+
+  A phone reported GUI.skin as null, with every style on it null too, and the
+  interface died on the first frame. The built-in resources are present in the
+  APK, so the file is not what went missing: the types that read it are the
+  suspect, and they are only ever reached from inside the engine, which is
+  exactly the shape of thing managed stripping removes.
+
+  This appeared after a rebuild with the intermediate build cache deleted. The
+  cached build kept an older stripping result; the clean one recomputed it.
+-->
+<linker>
+  <assembly fullname="UnityEngine.IMGUIModule" preserve="all"/>
+  <assembly fullname="UnityEngine.TextRenderingModule" preserve="all"/>
+</linker>
