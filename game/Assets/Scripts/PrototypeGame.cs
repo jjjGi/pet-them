@@ -124,6 +124,7 @@ namespace PetThem.Game
         private bool stylesReady;
         private string screenError = "";
         private string skinReport = "";
+        private static GUISkin madeSkin;
         private string serverDraft;
         private string fontReport = "";
         private bool koreanUnavailable;
@@ -907,7 +908,8 @@ namespace PetThem.Game
             GUIStyle skinLabel = skin != null ? skin.label : null;
             GUIStyle skinButton = skin != null ? skin.button : null;
             GUIStyle skinField = skin != null ? skin.textField : null;
-            skinReport = skinLabel != null && skinButton != null && skinField != null ? ""
+            skinReport = madeSkin != null ? "GUI.skin was missing; running on a made one"
+                : skinLabel != null && skinButton != null && skinField != null ? ""
                 : "GUI.skin unusable: skin " + (skin == null ? "null" : "ok") +
                   ", label " + (skinLabel == null ? "null" : "ok") +
                   ", button " + (skinButton == null ? "null" : "ok") +
@@ -1081,14 +1083,63 @@ namespace PetThem.Game
         /// </remarks>
         private void OnGUI()
         {
+            EnsureSkin();
             if (screenError.Length > 0) { DrawScreenFailure(); return; }
+            // IMGUI throws this to unwind itself on purpose. Reporting it as a broken screen
+            // turns ordinary control flow into a crash report.
             try { DrawScreen(); }
+            catch (ExitGUIException) { throw; }
             catch (Exception ex)
             {
                 screenError = ex.GetType().Name + ": " + ex.Message + "\n\n" +
                     FirstFrames(ex.StackTrace);
                 Debug.LogException(ex);
             }
+        }
+
+        /// <summary>
+        /// Gives IMGUI a skin when the engine did not.
+        /// </summary>
+        /// <remarks>
+        /// On a phone <c>GUI.skin</c> came back null and every style on it with it. Building the
+        /// game's own styles without it was not enough: layout itself reaches for the skin --
+        /// <c>BeginScrollView</c> resolves its scrollbars there and threw on the next screen along.
+        /// So rather than route around a skin that is missing, put one back. A fresh GUISkin has
+        /// no textures, which costs the built-in backgrounds and nothing else, because the game
+        /// draws its own.
+        /// </remarks>
+        private static void EnsureSkin()
+        {
+            if (GUI.skin != null) return;
+            if (madeSkin == null)
+            {
+                madeSkin = ScriptableObject.CreateInstance<GUISkin>();
+                madeSkin.hideFlags = HideFlags.HideAndDontSave;
+                // A skin built this way can still hand out null styles, and one null style is
+                // enough to take the screen down again, so every slot is filled by hand.
+                madeSkin.box ??= new GUIStyle();
+                madeSkin.label ??= new GUIStyle();
+                madeSkin.button ??= new GUIStyle();
+                madeSkin.toggle ??= new GUIStyle();
+                madeSkin.textField ??= new GUIStyle();
+                madeSkin.textArea ??= new GUIStyle();
+                madeSkin.window ??= new GUIStyle();
+                madeSkin.scrollView ??= new GUIStyle();
+                madeSkin.horizontalSlider ??= new GUIStyle();
+                madeSkin.horizontalSliderThumb ??= new GUIStyle();
+                madeSkin.verticalSlider ??= new GUIStyle();
+                madeSkin.verticalSliderThumb ??= new GUIStyle();
+                madeSkin.horizontalScrollbar ??= new GUIStyle();
+                madeSkin.horizontalScrollbarThumb ??= new GUIStyle();
+                madeSkin.horizontalScrollbarLeftButton ??= new GUIStyle();
+                madeSkin.horizontalScrollbarRightButton ??= new GUIStyle();
+                madeSkin.verticalScrollbar ??= new GUIStyle();
+                madeSkin.verticalScrollbarThumb ??= new GUIStyle();
+                madeSkin.verticalScrollbarUpButton ??= new GUIStyle();
+                madeSkin.verticalScrollbarDownButton ??= new GUIStyle();
+                madeSkin.customStyles ??= Array.Empty<GUIStyle>();
+            }
+            GUI.skin = madeSkin;
         }
 
         /// <summary>The top few stack frames, which is what names the line that broke.</summary>
@@ -1551,7 +1602,7 @@ namespace PetThem.Game
             GUILayout.Label(recordingError.Length > 0 ? recordingError
                 : Texts.SavePath(ProfileStore.FilePath),small);
             // Drawn with the built-in font on purpose, so it survives a font that cannot draw.
-            GUILayout.Label(fontReport,diagnostic);
+            GUILayout.Label(skinReport.Length > 0 ? fontReport + Environment.NewLine + skinReport : fontReport, diagnostic);
             GUILayout.EndScrollView();
             GUILayout.EndArea();
         }
